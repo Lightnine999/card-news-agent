@@ -23,6 +23,14 @@ def _research_view(data: dict) -> dict | None:
     return {**research, "candidates": marked}
 
 
+def _result_view(project_id: str, result: dict | None) -> dict | None:
+    if not result:
+        return result
+    cards = [{**c, "imageUrl": f"/api/projects/{project_id}/files/{c['image']['file']}"
+              if c.get("image") else None} for c in result["cards"]]
+    return {**result, "cards": cards}
+
+
 def project_view(conn, project: dict) -> dict:
     data = project["data"]
     current = questions.open_question(data)
@@ -38,7 +46,7 @@ def project_view(conn, project: dict) -> dict:
         "researchNotes": data["researchNotes"],
         "editorial": data["editorial"],
         "storyboard": data["storyboard"],
-        "result": data["result"],
+        "result": _result_view(project["id"], data["result"]),
         "currentQuestion": questions.public(current) if current else None,
         "answers": data["answers"],
         "activeRun": public_run(repo.active_run(conn, project["id"])),

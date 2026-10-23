@@ -1,6 +1,6 @@
-# API 명세 (초안 v0.1)
+# API 명세 (v0.2)
 
-> 상태: **검토 중** — 사용자가 승인하기 전까지 구현하지 않아요.
+> 상태: v0.1을 사용자가 승인했고(2026-10-23), 구현하면서 바뀐 점과 연결 방식(3.1)을 더했어요.
 > 근거: PRD.md "웹 API 계약 초안"과 "실행 구조", DECISIONS.md D1~D9.
 > PRD 표에 없는데 새로 넣은 것에는 **[추가]**, AI가 임의로 정한 기본값에는 **[AI 기본안]**을 붙였어요.
 
@@ -325,6 +325,64 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 
 **16. 상태 점검** — `claude --version`, `agy --version`, Chromium 실행, 글꼴 파일 존재만 확인해요. 로그인 여부는 실제 호출에서만 알 수 있어서 `"unknown"`으로 보여 줘요.
 
+## 3.1 연결 방식: 주제 입력 → 후보 선택 → 질문 답변
+
+브라우저는 서버에 요청만 보내고, 오래 걸리는 일은 작업 프로세스가 해요. 둘 사이의 약속은 SQLite에 저장된 상태뿐이에요.
+그래서 브라우저를 새로고침하거나 닫았다 열어도 같은 상태를 다시 읽어 와요.
+
+```mermaid
+sequenceDiagram
+  participant B as 브라우저 (static/)
+  participant S as 웹 서버 (FastAPI)
+  participant D as SQLite (data/app.db)
+  participant W as 작업 프로세스 (worker)
+  participant E as 엔진 (모의 / Claude CLI)
+  B->>S: POST /api/projects {topic, requestId}
+  S->>D: 프로젝트 저장 (stage=created)
+  B->>S: POST /api/projects/{id}/research {requestId}
+  S->>D: run 저장 (queued)
+  S-->>B: 202 {runId}
+  W->>D: run 가져가기 (running)
+  W->>E: 조사 시작
+  loop 실행 중이면 1.5초마다
+    B->>S: GET /api/projects/{id}
+    S-->>B: 진행 메시지·상태
+  end
+  E-->>W: 후보 (result)
+  W->>D: 후보 저장 (stage=selecting)
+  B->>S: POST /selection {candidateIds, version} (체크할 때마다)
+  B->>S: POST /deep-research {version, requestId}
+  W->>E: 선택한 후보만 심층 조사
+  E-->>W: 질문 (need_input)
+  W->>D: 질문 저장, run=waiting_for_user (폴링 멈춤)
+  B->>S: POST /answers {questionId, version, answer, requestId}
+  S->>D: 답 저장, run 다시 running
+  W->>E: 같은 세션으로 답 전달 (--resume)
+  E-->>W: 편집 제안·스토리보드 (result)
+  W->>D: 저장 (stage=storyboard_review)
+```
+
+| 화면에서 하는 일 | 브라우저가 보내는 요청 | 화면이 보는 값 |
+|---|---|---|
+| 주제 입력 → [조사 시작] | `POST /api/projects` 다음에 `POST /api/projects/{id}/research` | 주소가 `/p/{id}`로 바뀌고 진행 패널이 떠요 |
+| 조사 진행 지켜보기 | 1.5초마다 `GET /api/projects/{id}` | `activeRun.progress`(검색어), `activeRun.period`(기준 시각·기간) |
+| 후보가 5개 미만일 때 | (서버가 `q_expand_period` 질문을 냄) | `currentQuestion` → 질문 상자 |
+| 후보 체크·해제 | 체크할 때마다 `POST /selection` (차례로 보내요) | 응답의 `version`을 다음 저장에 써요 |
+| [다음 단계] | `POST /deep-research` | 진행 패널 → 조사 기록 |
+| 독자 질문에 답하기 | `POST /answers` | 답을 보내면 질문 상자가 사라지고 진행 패널이 떠요 |
+| 새로고침 | `GET /api/projects/{id}` 한 번 | 선택·질문·진행 상태가 그대로 다시 보여요 |
+
+지키는 약속
+- 버튼 하나를 누를 때마다 `requestId`(UUID)를 새로 만들어요. 같은 버튼을 두 번 누르거나 네트워크 재시도가 나도 같은 ID로 보내서 한 번만 반영돼요(0.2절).
+- 화면은 마지막으로 받은 `version`을 함께 보내요. 다른 탭에서 바뀐 뒤면 `409 VERSION_CONFLICT`가 오고, 화면은 최신 상태를 다시 불러와요(0.3절).
+- 폴링은 run이 `queued`·`running`일 때만 해요. `waiting_for_user`(답 기다림)나 완료·실패면 멈춰요.
+- 화면 파일(`/`, `/p/…`, `/static/…`)에는 `Cache-Control: no-cache`를 붙여요. 앱을 고친 뒤에도 예전 화면 파일을 쓰지 않게요.
+
+엔진 고르기와 모의 데이터 표시
+- 어떤 엔진을 쓸지는 서버를 켤 때 정해요. 기본은 Claude CLI(`uv run cardnews`)이고, `CARDNEWS_ENGINE=mock uv run cardnews`로 켜면 모의 엔진이에요.
+- 프로젝트는 만들 때의 엔진을 계속 써요. 모의 엔진으로 만든 프로젝트는 `isMock=true`예요.
+- `isMock=true`이면 화면 맨 위에 노란 띠 "모의 데이터예요. 실제 검색 결과가 아니에요."를 항상 보여 줘요. 모의 후보·후킹 문구 앞에는 `[모의]`가 붙고, 시작 화면 목록에도 "모의" 배지가 붙어요. 모의 프로젝트의 그림은 agy를 부르지 않는 모의 그림이고, 생성 기록에 `origin=mock`으로 남아요.
+
 ## 4. 작업 프로세스와 엔진 연결 (화면에는 안 보이는 부분)
 
 ### 4.1 구성 **[AI 기본안]**
@@ -332,6 +390,7 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 - 웹 서버는 run 행을 `queued`로 넣기만 해요. worker가 가져가서(`running`, `workerPid` 기록) 실행해요.
 - 프로젝트 하나에는 실행 중 run이 한 번에 하나만 있어요. 서로 다른 프로젝트는 동시에 최대 2개까지 돌려요 **[AI 기본안]**. 세션 ID·작업 폴더가 프로젝트별로 나뉘어 있어서 섞이지 않아요.
 - 서버 시작 시: `running`인데 살아 있는 worker가 없는 run은 `interrupted`로 바꿔요. 자동으로 다시 실행하지 않고 화면에서 이어하기·처음부터를 고르게 해요.
+- 끄기: 터미널에서 Ctrl+C를 누르면 웹 서버와 작업 프로세스가 함께 꺼져요. 작업 프로세스는 자기가 띄운 claude·agy(별도 프로세스 그룹)까지 끝내고 나가요. 웹 서버가 먼저 사라져도 작업 프로세스가 알아채고 같은 방식으로 끝나요. 실행 중이던 run은 다음에 켤 때 `interrupted`로 보여요.
 
 ### 4.2 공통 엔진 인터페이스 (PRD 규약)
 

@@ -7,15 +7,15 @@
 """
 
 import json
-import os
 import re
-import signal
 import subprocess
 import threading
 import time
 from pathlib import Path
 
 from cardnews import config, sources
+from cardnews import proc as procs
+from cardnews.proc import kill_group
 from cardnews.engines import claude_prompts as prompts
 from cardnews.engines import claude_schema as S
 from cardnews.engines.base import Cancelled, EngineEvent, RunContext
@@ -50,10 +50,11 @@ def build_args(prompt: str, schema: str, session_id: str | None, step: str) -> l
             "--strict-mcp-config", "--setting-sources", "project"]
     if session_id:
         args += ["--resume", session_id]
-    tools = SEARCH_TOOLS if step in ("research", "deep_research") else ()
+    blocked = config.test_block_search()  # 확인용: 검색 실패 상황을 만들어요
+    tools = SEARCH_TOOLS if step in ("research", "deep_research") and not blocked else ()
     if tools:
         args += ["--allowedTools", *tools]
-    return [*args, "--disallowedTools", *BLOCKED_TOOLS]
+    return [*args, "--disallowedTools", *BLOCKED_TOOLS, *(SEARCH_TOOLS if blocked else ())]
 
 
 # --- 프로세스 실행 -----------------------------------------------------------------
@@ -72,17 +73,6 @@ def _progress_from(event: dict) -> list[str]:
         elif part.get("name") == "WebFetch":
             messages.append(f"원문 확인: {str(args.get('url', ''))[:100]}")
     return messages
-
-
-def _kill_group(proc: subprocess.Popen) -> None:
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-        proc.wait(timeout=3)
-    except ProcessLookupError:
-        return
-    except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait()
 
 
 class _Reader:
@@ -129,8 +119,8 @@ def run_claude(ctx: RunContext, args: list[str], step: str) -> dict:
     cwd = ctx.engine_dir or ctx.run_dir
     cwd.mkdir(parents=True, exist_ok=True)
     try:
-        proc = subprocess.Popen(args, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, start_new_session=True)
+        proc = procs.spawn(args, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, text=True)
     except (FileNotFoundError, PermissionError) as err:
         raise AppError("TOOL_UNAVAILABLE", "Claude CLI(claude)를 실행하지 못했어요. 설치돼 있는지 확인해 주세요.",
                        {"bin": args[0]}) from err
@@ -140,12 +130,14 @@ def run_claude(ctx: RunContext, args: list[str], step: str) -> dict:
         while proc.poll() is None:
             ctx.check_cancel()
             if time.monotonic() - started > timeout:
-                _kill_group(proc)
+                kill_group(proc)
                 raise AppError("ENGINE_OUTPUT_INVALID", f"엔진이 {timeout // 60}분 안에 끝나지 않아서 멈췄어요.")
             time.sleep(POLL_SECONDS)
     except Cancelled:
-        _kill_group(proc)
+        kill_group(proc)
         raise
+    finally:
+        procs.release(proc)
     reader.join()
     result = _check_result(proc.returncode, reader)
     return {**result, "_opened": sorted(reader.fetches.opened)}

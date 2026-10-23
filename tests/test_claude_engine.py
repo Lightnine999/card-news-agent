@@ -231,3 +231,30 @@ def test_out_of_period_candidates_are_excluded(cli, monkeypatch):
     excluded = p["research"]["excluded"]
     assert [e["title"] for e in excluded] == ["후보 90", "후보 91"]
     assert all(e["reason"] for e in excluded)
+
+
+# --- 확인용 스위치 (기본은 꺼져 있어요) ------------------------------------------
+
+
+def test_switches_are_off_by_default(cli):
+    to_question(cli)
+    research_call, deep_call = cli.calls()[0], cli.calls()[-1]
+    assert "WebSearch" in research_call["argv"][research_call["argv"].index("--allowedTools") + 1:]
+    assert "[확인용]" not in arg(deep_call, "-p")
+
+
+def test_ask_question_switch_forces_question_in_deep_research(cli, monkeypatch):
+    monkeypatch.setenv("CARDNEWS_TEST_ASK_QUESTION", "1")
+    to_question(cli)
+    research_prompt, deep_prompt = arg(cli.calls()[0], "-p"), arg(cli.calls()[-1], "-p")
+    assert "[확인용]" in deep_prompt and "need_input" in deep_prompt
+    assert "[확인용]" not in research_prompt  # 넓은 조사에는 영향이 없어요
+
+
+def test_block_search_switch_removes_search_tools(cli, monkeypatch):
+    monkeypatch.setenv("CARDNEWS_TEST_BLOCK_SEARCH", "1")
+    start(cli)
+    argv = cli.calls()[0]["argv"]
+    assert "--allowedTools" not in argv
+    blocked = argv[argv.index("--disallowedTools") + 1:]
+    assert "WebSearch" in blocked and "WebFetch" in blocked

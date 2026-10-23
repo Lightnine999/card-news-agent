@@ -64,7 +64,12 @@ export function headerView(p) {
     `<li class="${i < idx ? 'done' : i === idx ? 'now' : ''}">${label}</li>`).join('');
   const r = p.research;
   const running = p.activeRun?.period;
+  const failed = !p.activeRun && ['failed', 'interrupted', 'cancelled'].includes(p.lastRun?.status)
+    ? p.lastRun.period : null;
   let period = '조사 전';
+  if (!r?.requestedAt && failed?.requestedAt) {  // 조사를 했지만 끝내지 못한 경우
+    period = `조사를 끝내지 못했어요 · ${fmtTime(failed.requestedAt)} 기준 · 최근 ${failed.days}일`;
+  }
   if (r?.requestedAt) {
     period = `${fmtTime(r.requestedAt)} 기준 · 최근 ${r.period.days}일 (${fmtDate(r.period.from)} ~ ${fmtDate(r.period.to)})`;
   } else if (running) {
@@ -268,10 +273,53 @@ export function storyboardView(p, ui) {
     </section>`;
 }
 
+// --- 제작 (S6) -------------------------------------------------------------------
+
+const CARD_STATUS = {
+  pending: '대기', generating_image: '그림 만드는 중', image_ready: '그림 준비됨', failed: '실패',
+};
+
+function imageMeta(img) {
+  const [w, h] = img.originalSize;
+  const size = `${w}×${h} ${esc(img.originalFormat.toUpperCase())}`;
+  if (img.origin === 'mock') return `모의 그림 · ${size}`;
+  return `${esc(img.disclosure)} · ${esc(img.tool)} · ${size}`;
+}
+
+function productionCard(card, sb, version, ui) {
+  const plan = sb.cards.find((c) => c.id === card.cardId) || {};
+  const thumb = card.imageUrl
+    ? `<img src="${esc(card.imageUrl)}" alt="${esc(plan.title || card.cardId)} 배경 그림" loading="lazy">`
+    : `<div class="thumb-empty">${card.status === 'generating_image' ? '<span class="spinner"></span>' : ''}${esc(CARD_STATUS[card.status])}</div>`;
+  const error = card.status === 'failed' && card.error ? `
+    <p class="card-error">${esc(card.error.message)} <span class="muted">(${esc(card.error.code)})</span></p>
+    ${btn(`retry-card:${card.cardId}`, '이 카드 다시 만들기', ui, { data: `data-card="${esc(card.cardId)}" data-version="${version}"` })}` : '';
+  return `
+    <article class="prod-card st-${esc(card.status)}">
+      <div class="thumb">${thumb}</div>
+      <p><b>${plan.order ?? ''}. ${esc(plan.title || card.cardId)}</b></p>
+      <p class="muted">${esc(CARD_STATUS[card.status] || card.status)}${card.cardVersion > 1 ? ` · v${card.cardVersion}` : ''}</p>
+      ${card.image ? `<p class="small muted">${imageMeta(card.image)}</p>` : ''}
+      ${error}
+    </article>`;
+}
+
+export function producingView(p, ui) {
+  const result = p.result;
+  if (!result) return '';
+  const ready = result.cards.filter((c) => c.status === 'image_ready').length;
+  const failed = result.cards.filter((c) => c.status === 'failed').length;
+  return `
+    <section class="panel">
+      <h2>배경 그림 ${ready}/${result.cards.length}장 준비됨${failed ? ` · 실패 ${failed}장` : ''}</h2>
+      <p class="muted">글자는 그림에 넣지 않고, 5단계에서 연결할 렌더러가 따로 올려요. 지금은 배경 그림까지만 만들어요.</p>
+      <div class="prod-grid">${result.cards.map((c) => productionCard(c, p.storyboard, result.version, ui)).join('')}</div>
+    </section>`;
+}
+
 export function placeholderView(p) {
   const text = {
     created: '아직 조사를 시작하지 않았어요.',
-    producing: '이미지 제작과 글자 렌더링은 구현 4~5단계에서 연결해요.',
     reviewing: '검수 화면은 구현 5단계에서 연결해요.',
     final_approved: '내려받기 화면은 구현 5단계에서 연결해요.',
   }[p.stage];

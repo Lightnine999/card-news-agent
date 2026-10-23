@@ -12,6 +12,7 @@ STAGE_OF_KIND = {
     "deep_research": "deep_researching",
     "storyboard": "editing",
     "production": "producing",
+    "image_retry": "producing",
 }
 
 

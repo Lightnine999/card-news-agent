@@ -304,7 +304,7 @@ def test_storyboard_feedback_makes_new_version(client, run_worker):
     assert p["stage"] == "storyboard_review"
 
 
-def test_storyboard_approval_starts_production_not_yet_connected(client, run_worker):
+def test_storyboard_approval_starts_image_production(client, run_worker):
     pid, p = to_storyboard(client, run_worker)
     res = client.post(
         f"/api/projects/{pid}/approve",
@@ -315,9 +315,10 @@ def test_storyboard_approval_starts_production_not_yet_connected(client, run_wor
     p = get(client, pid)
     assert p["storyboard"]["approvedAt"]
     assert p["stage"] == "producing"
-    # 제작은 4~5단계에서 연결해요. 성공한 척하지 않고 실패로 보여 줘요.
-    assert p["lastRun"]["status"] == "failed"
-    assert p["lastRun"]["error"]["code"] == "TOOL_UNAVAILABLE"
+    assert p["lastRun"]["status"] == "succeeded"
+    # 모의 엔진 프로젝트는 agy 대신 모의 그림을 써요. 글자 렌더링은 5단계에서 이어 붙여요.
+    assert {c["status"] for c in p["result"]["cards"]} == {"image_ready"}
+    assert p["result"]["cards"][0]["image"]["origin"] == "mock"
 
 
 def test_storyboard_approval_with_old_version_is_rejected(client, run_worker):

@@ -1,5 +1,6 @@
 """웹 API와 화면 파일 (API_SPEC 3). 오래 걸리는 일은 run으로 넘기고 바로 답해요."""
 
+import re
 import shutil
 from typing import Literal
 
@@ -10,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cardnews import config, db, repo, service, views
+from cardnews.images import files as image_files
 from cardnews.errors import AppError
 
 STATIC = config.ROOT / "static"
@@ -111,6 +113,11 @@ class Approve(Versioned):
     stage: Literal["storyboard", "final"]
 
 
+class RetryCard(BaseModel):
+    resultVersion: int
+    requestId: str = request_id()
+
+
 class Resume(BaseModel):
     mode: Literal["continue", "restart"]
     requestId: str = request_id()
@@ -205,6 +212,34 @@ def approve(project_id: str, req: Approve):
         return service.approve(conn, project_id, req.stage, req.version)
 
     return _respond(service.idempotent(project_id, req.requestId, "approve", _body(req), action))
+
+
+@app.post("/api/projects/{project_id}/cards/{card_id}/retry")
+def retry_card(project_id: str, card_id: str, req: RetryCard):
+    def action(conn):
+        return 202, service.retry_card(conn, project_id, card_id, req.resultVersion)
+
+    return _respond(service.idempotent(project_id, req.requestId, f"retry:{card_id}",
+                                       _body(req), action))
+
+
+PROJECT_ID = re.compile(r"^prj_[0-9a-f]{12}$")
+
+
+@app.get("/api/projects/{project_id}/files/{path:path}")
+def project_file(project_id: str, path: str):
+    """프로젝트 폴더 안의 그림 파일만 내줘요. 폴더 밖·링크·그림이 아닌 파일은 없는 것으로 답해요."""
+    missing = AppError("NOT_FOUND", "파일을 찾지 못했어요.")
+    if not PROJECT_ID.match(project_id):
+        raise missing
+    base = (config.data_dir() / "projects" / project_id).resolve()
+    target = (base / path).resolve()
+    if not target.is_relative_to(base) or not target.is_file() or (base / path).is_symlink():
+        raise missing
+    media = image_files.content_type(target)
+    if media is None:
+        raise missing
+    return FileResponse(target, media_type=media)
 
 
 # --- 작업 ------------------------------------------------------------------------

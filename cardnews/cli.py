@@ -35,15 +35,17 @@ def main() -> None:
 
     db.init_db()
     worker = subprocess.Popen([sys.executable, "-m", "cardnews.worker"])
-    print(f"엔진: {config.engine_name()}  ·  열기: http://{config.HOST}:{args.port}")
+    print(f"엔진: {config.engine_name()}  ·  열기: http://{config.HOST}:{args.port}", flush=True)
+    print("끄려면 이 창에서 Ctrl+C를 누르세요.", flush=True)
     try:
         uvicorn.run("cardnews.app:app", host=config.HOST, port=args.port, log_level="warning")
     finally:
-        worker.terminate()
+        worker.terminate()  # 작업 프로세스는 실행 중이던 claude·agy까지 끝내고 나가요
         try:
-            worker.wait(timeout=5)
+            worker.wait(timeout=10)
         except subprocess.TimeoutExpired:
             worker.kill()
+        print("서버를 껐어요.", flush=True)
 
 
 if __name__ == "__main__":

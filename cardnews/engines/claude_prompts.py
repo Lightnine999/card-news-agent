@@ -6,6 +6,8 @@
 import json
 from datetime import datetime, timedelta
 
+from cardnews import config
+
 RULES = """너는 카드뉴스 앱의 조사·편집 엔진이에요. 결과는 지정된 JSON 형식으로만 돌려줘요.
 지켜야 할 것:
 - 한국어로 써요.
@@ -82,7 +84,13 @@ CARD_RULES = """스토리보드(cards) 규칙:
 - 후킹 문구(hooks)는 2~3개, 확인된 사실 범위 안에서만 써요."""
 
 
+FORCED_QUESTION = """
+[확인용] 이번 실행은 질문 경로를 확인하려는 거예요. researchNotes를 만든 뒤 반드시 status=need_input으로
+독자 질문 하나를 돌려줘요. 이때 editorial·cards는 비워요."""
+
+
 def deep_research(task: dict) -> str:
+    forced = FORCED_QUESTION if config.test_ask_question() else ""
     return f"""{_quoted("조사 주제", task["topic"])}
 
 사용자가 고른 후보예요 (id는 그대로 돌려줘요):
@@ -101,7 +109,7 @@ def deep_research(task: dict) -> str:
    question.id는 q_로 시작하는 영어 소문자(예: q_audience), 선택지 2~4개, 각 description은 차이를 한 줄로,
    allowFreeText=true, recommendedOptionId와 recommendationReason을 채워요. 이때 editorial·cards는 비워요.
 5. 지금 정보로 충분히 판단할 수 있으면 status=result로 researchNotes, editorial(decidedBy=ai_recommendation), cards를 돌려줘요.
-
+{forced}
 {CARD_RULES}"""
 
 

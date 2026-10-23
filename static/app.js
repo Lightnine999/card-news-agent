@@ -41,6 +41,7 @@ function render() {
   if (p.stage === 'selecting') parts.push(V.selectingView(p, ui));
   if (['deep_researching', 'editing', 'storyboard_review'].includes(p.stage)) parts.push(V.notesView(p));
   if (p.stage === 'storyboard_review') parts.push(V.storyboardView(p, ui));
+  if (p.stage === 'producing') parts.push(V.producingView(p, ui));
   parts.push(V.placeholderView(p));
   $app.innerHTML = parts.join('');
 }
@@ -128,6 +129,9 @@ const actions = {
   'approve-storyboard': () => act('approve-storyboard', (rid) => post(`${base()}/approve`, {
     stage: 'storyboard', version: project.storyboard.version, requestId: rid,
   })),
+  'retry-card': (el) => act(`retry-card:${el.dataset.card}`, (rid) => post(
+    `${base()}/cards/${el.dataset.card}/retry`, { resultVersion: Number(el.dataset.version), requestId: rid },
+  )),
   create: () => act('create', async (rid) => {
     const form = document.getElementById('create-form');
     if (!form.reportValidity()) return;
@@ -170,7 +174,8 @@ $app.addEventListener('click', (event) => {
   const el = event.target.closest('[data-action]');
   if (!el || el.disabled) return;
   event.preventDefault();
-  actions[el.dataset.action]?.(el);
+  const [name] = el.dataset.action.split(':');  // retry-card:card_2 처럼 카드마다 따로 잠가요
+  actions[name]?.(el);
 });
 
 $app.addEventListener('change', (event) => {

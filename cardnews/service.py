@@ -176,6 +176,23 @@ def _approve_final(conn, project: dict, version: int) -> dict:
     return {"finalApproval": approval}
 
 
+def retry_card(conn, project_id: str, card_id: str, result_version: int) -> dict:
+    project = repo.get_project(conn, project_id)
+    _require_stage(project, "producing")
+    result = project["data"]["result"]
+    if result is None:
+        raise AppError("STAGE_CONFLICT", "아직 제작 결과가 없어요.")
+    _require_version(result["version"], result_version)
+    card = next((c for c in result["cards"] if c["cardId"] == card_id), None)
+    if card is None:
+        raise AppError("NOT_FOUND", "카드를 찾지 못했어요.", {"cardId": card_id})
+    if card["status"] != "failed":
+        raise AppError("STAGE_CONFLICT", "실패한 카드만 다시 만들 수 있어요.", {"status": card["status"]})
+    _require_idle(conn, project_id)
+    _, run = _start_run(conn, project, "image_retry", {"cardId": card_id})
+    return {"runId": run["id"]}
+
+
 # --- 취소·이어하기 ---------------------------------------------------------------
 
 

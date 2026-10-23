@@ -5,11 +5,12 @@
 
 import logging
 import os
+import signal
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
-from cardnews import config, db, pipeline, repo
+from cardnews import config, db, pipeline, production, proc, repo
 from cardnews.engines.base import Cancelled, EngineEvent, RunContext, get_engine
 from cardnews.errors import AppError
 from cardnews.util import now_iso
@@ -77,9 +78,27 @@ def _task(run: dict, project: dict) -> dict:
             "instruction": run["payload"].get("instruction")}
 
 
+IMAGE_KINDS = ("production", "image_retry")
+
+
+def _execute_images(run: dict, project: dict) -> None:
+    try:
+        production.execute(run, project, _context(run, project))
+    except Cancelled:
+        return
+    except Exception:  # 예상 못 한 오류도 run에 남겨 화면에 보여요
+        log.exception("run %s 실패", run["id"])
+        with db.transaction() as conn:
+            error = AppError("INTERNAL_ERROR", "그림을 만드는 중 예상하지 못한 오류가 났어요.").to_dict()
+            pipeline.finish_run(conn, run["id"], "failed", error)
+
+
 def execute(run: dict) -> None:
     with db.transaction() as conn:
         project = repo.get_project(conn, run["projectId"])
+    if run["kind"] in IMAGE_KINDS:
+        _execute_images(run, project)
+        return
     try:
         engine = get_engine(run["payload"]["engineName"])
         ctx, task = _context(run, project), _task(run, project)
@@ -121,8 +140,18 @@ def _exit_with_parent(parent: int) -> None:
     """
     while os.getppid() == parent:
         time.sleep(POLL_SECONDS)
-    log.info("웹 서버가 끝나서 작업 프로세스도 끝내요")
-    os._exit(1)
+    _shutdown("웹 서버가 끝나서 작업 프로세스도 끝내요", 1)
+
+
+def _shutdown(reason: str, code: int) -> None:
+    """실행 중이던 claude·agy까지 끝내고 바로 나가요. 실행 중이던 run은 다음 시작 때 interrupted가 돼요."""
+    killed = proc.kill_all()
+    log.info("%s%s", reason, f" (실행 중이던 엔진 {killed}개도 끝냈어요)" if killed else "")
+    os._exit(code)
+
+
+def _on_signal(signum, _frame) -> None:
+    _shutdown("종료 신호를 받아서 작업 프로세스를 끝내요", 0)
 
 
 def main() -> None:
@@ -131,6 +160,8 @@ def main() -> None:
     recovered = recover_interrupted()
     if recovered:
         log.info("끊긴 작업 %d개를 interrupted로 표시했어요", recovered)
+    signal.signal(signal.SIGTERM, _on_signal)  # 서버가 끌 때
+    signal.signal(signal.SIGINT, _on_signal)   # 터미널에서 Ctrl+C
     threading.Thread(target=_exit_with_parent, args=(os.getppid(),), daemon=True).start()
     running: set[Future] = set()
     with ThreadPoolExecutor(max_workers=config.MAX_CONCURRENT_RUNS) as pool:
