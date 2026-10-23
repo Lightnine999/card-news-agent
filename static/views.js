@@ -299,7 +299,10 @@ function productionCard(card, sb, version, ui) {
     : `<div class="thumb-empty">${card.status === 'generating_image' ? '<span class="spinner"></span>' : ''}${esc(CARD_STATUS[card.status])}</div>`;
   const error = card.status === 'failed' && card.error ? `
     <p class="card-error">${esc(card.error.message)} <span class="muted">(${esc(card.error.code)})</span></p>
-    ${btn(`retry-card:${card.cardId}`, '이 카드 다시 만들기', ui, { data: `data-card="${esc(card.cardId)}" data-version="${version}"` })}` : '';
+    ${btn(`retry-card:${card.cardId}`, '이 카드 다시 만들기', ui, { data: `data-card="${esc(card.cardId)}" data-version="${version}"` })}`
+    : card.status === 'image_ready' && card.image?.fallbackFrom
+      ? btn(`retry-card:${card.cardId}`, 'agy로 다시 만들기', ui, { data: `data-card="${esc(card.cardId)}" data-version="${version}"` })
+      : '';
   return `
     <article class="prod-card st-${esc(card.status)}">
       <div class="thumb">${thumb}</div>

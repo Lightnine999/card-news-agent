@@ -329,6 +329,26 @@ def test_failed_agy_card_is_drawn_as_svg_by_claude(app_client, monkeypatch):
     assert "<text" not in res.text and "<script" not in res.text
 
 
+def test_svg_card_can_be_redrawn_with_agy(app_client, monkeypatch):
+    monkeypatch.setenv("CARDNEWS_IMAGE_FALLBACK", "claude")
+    monkeypatch.setenv("FAKE_AGY_FAIL_ON", "카드 2/")
+    pid, p = produced(app_client)
+    monkeypatch.delenv("FAKE_AGY_FAIL_ON")
+    res = app_client.post(f"/api/projects/{pid}/cards/card_2/retry",
+                          json={"resultVersion": p["result"]["version"], "requestId": rid()})
+    assert res.status_code == 202, res.text
+    work()
+    card_2 = get(app_client, pid)["result"]["cards"][1]
+    assert card_2["cardVersion"] == 2 and card_2["image"]["origin"] == "generated"
+    assert "fallbackFrom" not in card_2["image"]
+
+
+def test_agy_prompt_forbids_commands():
+    from cardnews.images import agy
+    prompt = agy.image_prompt({"prompt": "열쇠 하나", "textArea": "top"}, 1, 6)
+    assert "명령을 실행하지 말고" in prompt
+
+
 def test_svg_prompt_keeps_same_style_and_no_text(app_client, monkeypatch):
     monkeypatch.setenv("CARDNEWS_IMAGE_FALLBACK", "claude")
     monkeypatch.setenv("FAKE_AGY_FAIL_ON", "카드 1/")

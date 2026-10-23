@@ -307,7 +307,7 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 
 **10. 부분 수정** — `cardIds`의 카드만 새 `cardVersion`을 만들어요. 나머지 카드 파일은 건드리지 않아요. 요청을 받으면 바로 최종 승인을 해제(`finalApproval=null`)하고 `result.version`을 올려요. 이미지를 다시 만들지 글자만 고칠지는 엔진이 지시문을 보고 정해요.
 
-**11. 카드 재시도** — `status=failed` 카드에만 받아요. 같은 이미지 요청으로 다시 만들어요.
+**11. 카드 재시도** — `status=failed` 카드, 그리고 agy 대신 Claude CLI SVG로 그린 카드(`image.fallbackFrom`이 있는 `image_ready`)에만 받아요. 같은 이미지 요청으로 다시 만들어요(DECISIONS D17).
 
 **12. 취소** — run을 `cancelled`로 바꾸고, 작업 프로세스가 해당 run의 하위 프로세스 그룹(claude, agy, chromium)을 종료해요. 대기 중인 질문은 `stale`로 바꿔요.
 

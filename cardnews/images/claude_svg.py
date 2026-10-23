@@ -37,7 +37,8 @@ def svg_prompt(plan: dict, index: int, total: int) -> str:
 - {STYLE}
 - 글자를 올릴 자리: 화면 {area} 약 40%는 비워 두고 단색이나 부드러운 그라디언트만 두세요.
 - 도형(rect·circle·ellipse·path·polygon·line)과 그라디언트만 써요. <text>, 글자·숫자 모양, <image>, <script>, 외부 주소는 쓰지 마세요.
-- 실제 제품 화면, 실존 인물, 보도 사진처럼 보이지 않게 단순한 설명용 일러스트로 그려 주세요."""
+- SVG라서 사진은 흉내 내지 말고, 같은 색감의 단순한 물건 실루엣과 부드러운 그림자로 그려 주세요.
+- 실제 제품 화면, 실존 인물, 보도 사진처럼 보이지 않게 그려 주세요."""
 
 
 def _args(prompt: str) -> list[str]:

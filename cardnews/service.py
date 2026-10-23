@@ -189,8 +189,10 @@ def retry_card(conn, project_id: str, card_id: str, result_version: int) -> dict
     card = next((c for c in result["cards"] if c["cardId"] == card_id), None)
     if card is None:
         raise AppError("NOT_FOUND", "카드를 찾지 못했어요.", {"cardId": card_id})
-    if card["status"] != "failed":
-        raise AppError("STAGE_CONFLICT", "실패한 카드만 다시 만들 수 있어요.", {"status": card["status"]})
+    redraw = card["status"] == "image_ready" and (card.get("image") or {}).get("fallbackFrom")
+    if card["status"] != "failed" and not redraw:  # agy 대신 그린 카드는 agy로 다시 그릴 수 있어요
+        raise AppError("STAGE_CONFLICT", "실패했거나 대신 그린 카드만 다시 만들 수 있어요.",
+                       {"status": card["status"]})
     _require_idle(conn, project_id)
     _, run = _start_run(conn, project, "image_retry", {"cardId": card_id})
     return {"runId": run["id"]}

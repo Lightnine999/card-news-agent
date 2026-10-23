@@ -31,12 +31,14 @@ def _pause(tries: int) -> None:
     time.sleep(min(POLL_SECONDS, 0.02 * (tries + 1)))
 AUTH_HINTS = ("sign in", "signed in", "login", "log in", "authenticat", "credential", "401")
 TEXT_AREA = {"top": "위쪽", "bottom": "아래쪽", "center": "가운데"}
-STYLE = "모든 카드 공통 그림체: 차분한 남색·청록 계열, 단순한 기하학 도형과 부드러운 빛, 평면적인 설명용 일러스트"
+STYLE = ("모든 카드 공통 그림체: 잡지 화보 같은 정물 사진. 밝은 아이보리·연회색 배경에 물건 하나, "
+         "부드러운 자연광과 옅은 그림자, 채도 낮은 중성색, 장식 없는 넉넉한 여백")
 
 
 def image_prompt(plan: dict, index: int, total: int) -> str:
     area = TEXT_AREA.get(plan["textArea"], "위쪽")
     return f"""내장 이미지 생성 도구로 카드뉴스 배경 그림 한 장을 만들어 주세요 (카드 {index}/{total}).
+- 명령을 실행하지 말고 이미지 생성 도구만 바로 쓰세요. 폴더나 파일을 확인할 필요 없어요.
 - 세로 4:5 비율이에요.
 - 장면: {plan["prompt"]}
 - {STYLE}
