@@ -208,3 +208,89 @@ def test_mock_projects_use_local_placeholder_images(app_client, monkeypatch):
     assert card["status"] == "image_ready"
     assert card["image"]["origin"] == "mock" and card["image"]["originalFormat"] == "png"
     assert not (app_client.tmp / "agy-calls.jsonl").exists()
+
+
+def test_each_card_version_keeps_its_own_file(app_client, monkeypatch):
+    """다시 만든 카드가 예전 버전 파일을 덮어쓰지 않아야 해요 (PRD: 버전 보관)."""
+    monkeypatch.setenv("FAKE_AGY_FAIL_ON", "카드 2/")
+    pid, p = produced(app_client)
+    first = {c["cardId"]: c for c in p["result"]["cards"]}
+    assert first["card_1"]["image"]["file"].endswith("card_1.v1.jpg")
+    monkeypatch.delenv("FAKE_AGY_FAIL_ON")
+    app_client.post(f"/api/projects/{pid}/cards/card_2/retry",
+                    json={"resultVersion": p["result"]["version"], "requestId": rid()})
+    work()
+    card_2 = {c["cardId"]: c for c in get(app_client, pid)["result"]["cards"]}["card_2"]
+    assert card_2["image"]["file"].endswith("card_2.v2.jpg")
+    files_on_disk = sorted(f.name for f in (app_client.tmp / "data" / "projects" / pid
+                                            / "results" / "images").iterdir())
+    assert "card_1.v1.jpg" in files_on_disk and "card_2.v2.jpg" in files_on_disk
+
+
+def interrupt_after_two_cards(c, pid):
+    """카드 1·2만 끝난 채 서버가 꺼진 상황을 DB로 만들어요."""
+    from cardnews import db, repo, worker
+
+    with db.transaction() as conn:
+        project = repo.get_project(conn, pid)
+        run = repo.last_run(conn, pid)
+        result = project["data"]["result"]
+        cards = [{**card, "status": "image_ready" if i < 2 else ("generating_image" if i == 2 else "pending"),
+                  "image": card["image"] if i < 2 else None} for i, card in enumerate(result["cards"])]
+        repo.save_project(conn, {**project, "data": {**project["data"], "result": {**result, "cards": cards}}})
+        repo.update_run(conn, run["id"], status="running", dispatch=False)
+    worker.recover_interrupted()
+    return run["id"]
+
+
+def test_restart_marks_unfinished_cards_as_interrupted(app_client):
+    pid, _ = produced(app_client)
+    interrupt_after_two_cards(app_client, pid)
+    cards = get(app_client, pid)["result"]["cards"]
+    assert [c["status"] for c in cards[:2]] == ["image_ready", "image_ready"]
+    assert {c["status"] for c in cards[2:]} == {"failed"}  # "그림 만드는 중"으로 남지 않아요
+    assert {c["error"]["code"] for c in cards[2:]} == {"INTERRUPTED"}
+
+
+def test_continue_after_restart_makes_only_unfinished_cards(app_client):
+    pid, p = produced(app_client)
+    before = {c["cardId"]: c["image"] for c in p["result"]["cards"][:2]}
+    run_id = interrupt_after_two_cards(app_client, pid)
+    calls_before = len(app_client.calls())
+    res = app_client.post(f"/api/runs/{run_id}/resume", json={"mode": "continue", "requestId": rid()})
+    assert res.status_code == 202, res.text
+    work()
+    cards = {c["cardId"]: c for c in get(app_client, pid)["result"]["cards"]}
+    total = len(cards)
+    assert len(app_client.calls()) - calls_before == total - 2  # 끝나지 않은 카드만 다시 만들어요
+    assert all(c["status"] == "image_ready" for c in cards.values())
+    for cid, image in before.items():
+        assert cards[cid]["image"] == image  # 끝난 카드는 그대로예요
+
+
+def test_restart_from_scratch_remakes_all_cards(app_client):
+    pid, _ = produced(app_client)
+    run_id = interrupt_after_two_cards(app_client, pid)
+    calls_before = len(app_client.calls())
+    app_client.post(f"/api/runs/{run_id}/resume", json={"mode": "restart", "requestId": rid()})
+    work()
+    total = len(get(app_client, pid)["storyboard"]["cards"])
+    assert len(app_client.calls()) - calls_before == total  # 처음부터는 모든 카드를 다시 만들어요
+
+
+def test_cancel_marks_unfinished_cards(app_client, monkeypatch):
+    monkeypatch.setenv("FAKE_AGY_SCENARIO", "slow")
+    pid, p = to_storyboard(app_client)
+    run_id = approve(app_client, pid, p)
+    thread = threading.Thread(target=work)
+    thread.start()
+    pid_file = app_client.tmp / "agy.pid"
+    for _ in range(100):
+        if pid_file.exists() and pid_file.read_text():
+            break
+        time.sleep(0.05)
+    app_client.post(f"/api/runs/{run_id}/cancel")
+    thread.join(timeout=10)
+    cards = get(app_client, pid)["result"]["cards"]
+    assert {c["status"] for c in cards} == {"failed"}
+    assert {c["error"]["code"] for c in cards} == {"CANCELLED"}

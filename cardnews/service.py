@@ -2,7 +2,7 @@
 
 import json
 
-from cardnews import config, db, pipeline, questions, repo
+from cardnews import config, db, pipeline, production, questions, repo
 from cardnews.errors import AppError
 from cardnews.util import body_hash, now_iso
 
@@ -32,6 +32,9 @@ def idempotent(scope: str, request_id: str | None, endpoint: str, body: dict, ac
 
 
 # --- 공통 확인 -----------------------------------------------------------------
+
+
+IMAGE_KINDS = ("production", "image_retry")
 
 
 def _require_stage(project: dict, *stages: str) -> None:
@@ -205,6 +208,9 @@ def cancel_run(conn, run_id: str) -> dict:
                     error=AppError("CANCELLED", "작업을 취소했어요.").to_dict())
     project = repo.get_project(conn, run["projectId"])
     data = questions.stale_for_run(project["data"], run_id)
+    if run["kind"] in IMAGE_KINDS:
+        card_error = AppError("CANCELLED", "취소해서 이 카드 그림을 끝내지 못했어요.").to_dict()
+        data = {**data, "result": production.mark_unfinished(data["result"], card_error)}
     repo.save_project(conn, {**project, "stage": run["payload"]["prevStage"], "data": data})
     return {"status": "cancelled"}
 
@@ -217,14 +223,15 @@ def resume_run(conn, run_id: str, mode: str) -> dict:
     project = repo.get_project(conn, run["projectId"])
     _require_idle(conn, project["id"])
     same_engine = run["payload"].get("engineName") == project["engineName"]
-    if mode == "continue" and not (project["sessionId"] and same_engine):
+    images = run["kind"] in IMAGE_KINDS  # 그림 작업은 엔진 세션 없이 남은 카드만 이어서 만들어요
+    if mode == "continue" and not images and not (project["sessionId"] and same_engine):
         raise AppError("STAGE_CONFLICT", "이어갈 엔진 세션이 없어요. 처음부터 다시 해 주세요.",
                        next_actions=["restart"])
     if mode == "restart":
         project = {**project, "sessionId": None}
     payload = {k: v for k, v in run["payload"].items() if k not in ("question", "answer")}
-    new_run = repo.insert_run(conn, project["id"], run["kind"],
-                              {**payload, "phase": "start", "requestedAt": None},
-                              resumed_from=run_id)
+    payload = {**payload, "phase": "start", "requestedAt": None,
+               "onlyUnfinished": images and mode == "continue"}
+    new_run = repo.insert_run(conn, project["id"], run["kind"], payload, resumed_from=run_id)
     repo.save_project(conn, {**project, "stage": pipeline.STAGE_OF_KIND[run["kind"]]})
     return {"runId": new_run["id"]}

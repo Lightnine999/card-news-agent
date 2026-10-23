@@ -67,6 +67,11 @@ def new_images(folder: Path, since: float) -> list[Path]:
     return sorted(found, key=lambda p: p.stat().st_mtime)
 
 
+def with_extension(stem: Path, kind: str) -> Path:
+    """stem 뒤에 확장자를 붙여요. card_1.v2 → card_1.v2.jpg (with_suffix는 .v2를 확장자로 보고 지워요)."""
+    return stem.parent / f"{stem.name}.{EXTENSIONS[kind]}"
+
+
 def content_type(path: Path) -> str | None:
     info = image_info(path)
     return CONTENT_TYPES[info[0]] if info else None

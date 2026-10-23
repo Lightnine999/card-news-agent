@@ -31,7 +31,7 @@ def _png(width: int, height: int, shift: int) -> bytes:
 
 def generate(ctx, plan: dict, index: int, total: int, dest_stem: Path, tool: str) -> dict:
     ctx.check_cancel()
-    dest = dest_stem.with_suffix(".png")
+    dest = files.with_extension(dest_stem, "png")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(_png(WIDTH, HEIGHT, shift=(index * 9) % 40))  # 카드마다 조금씩 다른 색
     return {"origin": "mock", "tool": tool, "conversationId": None,

@@ -12,6 +12,7 @@
 | 화면 캡처 | [screens/](screens/) |
 | 결과 파일 | [results/](results/) |
 | 검증 기록 (수용 조건별 상태, 테스트, 실패 사례와 수정) | [VERIFICATION.md](VERIFICATION.md) |
+| 상황 재현 검증 (5가지 상황, 기대·실제·수정 후 결과) | [../VALIDATION.md](../VALIDATION.md) |
 | 커밋 전 개인정보·비밀값 점검 | [COMMIT_REVIEW.md](COMMIT_REVIEW.md) |
 
 ## 화면 캡처

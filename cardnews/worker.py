@@ -17,17 +17,27 @@ from cardnews.util import now_iso
 
 log = logging.getLogger("cardnews.worker")
 POLL_SECONDS = 0.3
+IMAGE_KINDS = ("production", "image_retry")
 
 
 def recover_interrupted() -> int:
     """시작할 때 한 번: 가져갔는데 끝나지 않은 run은 끊긴 것으로 표시해요. 자동 재실행은 안 해요."""
     with db.transaction() as conn:
         rows = conn.execute(
-            "SELECT id FROM runs WHERE status='running' AND dispatch=0").fetchall()
+            "SELECT id, kind, project_id FROM runs WHERE status='running' AND dispatch=0").fetchall()
         error = AppError("INTERRUPTED", "서버가 다시 시작돼서 작업이 멈췄어요.").to_dict()
+        card_error = AppError("INTERRUPTED", "서버가 다시 시작돼서 이 카드 그림을 끝내지 못했어요.").to_dict()
         for row in rows:
             pipeline.finish_run(conn, row["id"], "interrupted", error)
+            if row["kind"] in IMAGE_KINDS:
+                _mark_cards(conn, row["project_id"], card_error)
     return len(rows)
+
+
+def _mark_cards(conn, project_id: str, error: dict) -> None:
+    project = repo.get_project(conn, project_id)
+    result = production.mark_unfinished(project["data"]["result"], error)
+    repo.save_project(conn, {**project, "data": {**project["data"], "result": result}})
 
 
 def claim_next() -> dict | None:
@@ -76,9 +86,6 @@ def _task(run: dict, project: dict) -> dict:
     return {**base, "candidates": candidates, "researchNotes": data["researchNotes"],
             "editorial": data["editorial"], "storyboard": data["storyboard"],
             "instruction": run["payload"].get("instruction")}
-
-
-IMAGE_KINDS = ("production", "image_retry")
 
 
 def _execute_images(run: dict, project: dict) -> None:

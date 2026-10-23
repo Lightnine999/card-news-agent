@@ -135,7 +135,7 @@ def generate(ctx: RunContext, plan: dict, index: int, total: int, dest_stem: Pat
     cid = _conversation_id(done)
     source = _wait_for_image(ctx, config.agy_brain() / cid, since)
     kind, width, height = _check(source)
-    dest = dest_stem.with_suffix(f".{files.EXTENSIONS[kind]}")
+    dest = files.with_extension(dest_stem, kind)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, dest)
     digest = files.sha256(dest)

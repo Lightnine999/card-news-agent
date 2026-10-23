@@ -6,6 +6,7 @@ const POLL_MS = 1500;
 const RELOAD_CODES = new Set([
   'VERSION_CONFLICT', 'QUESTION_STALE', 'ALREADY_ANSWERED', 'STAGE_CONFLICT', 'IDEMPOTENCY_CONFLICT',
 ]);
+const STALE_ANSWER_CODES = new Set(['QUESTION_STALE', 'ALREADY_ANSWERED']);  // 지난 질문에 보낸 답
 const $app = document.getElementById('app');
 const $flash = document.getElementById('flash');
 
@@ -23,11 +24,11 @@ let saveChain = Promise.resolve();
 
 const projectIdFromPath = () => (location.pathname.match(/^\/p\/([\w-]+)/) || [])[1];
 
-function flash(message) {
+function flash(message, ms = 3500) {
   $flash.textContent = message;
   $flash.hidden = false;
   clearTimeout(flash.timer);
-  flash.timer = setTimeout(() => { $flash.hidden = true; }, 3500);
+  flash.timer = setTimeout(() => { $flash.hidden = true; }, ms);
 }
 
 // --- 그리기 ------------------------------------------------------------------
@@ -96,6 +97,7 @@ async function act(key, send) {
 
 function handleError(err) {
   if (!(err instanceof ApiError)) { flash('서버에 연결하지 못했어요. 서버가 켜져 있는지 확인해 주세요.'); return; }
+  if (STALE_ANSWER_CODES.has(err.code)) { flash(`${err.message} 최신 화면을 불러왔어요.`, 7000); return; }
   if (RELOAD_CODES.has(err.code)) { flash(`화면이 바뀌어서 새로 불러왔어요. (${err.message})`); return; }
   flash(err.message);
 }

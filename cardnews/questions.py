@@ -51,9 +51,9 @@ def check_answerable(data: dict, qid: str, version: int) -> dict:
         return current
     past = find(data, qid, version)
     if past and past["status"] == "answered":
-        raise AppError("ALREADY_ANSWERED", "이 질문에는 이미 답이 반영됐어요.",
+        raise AppError("ALREADY_ANSWERED", "지난 질문이에요. 이 질문에는 이미 답이 반영돼서, 방금 보낸 답은 반영하지 않았어요.",
                        {"questionId": qid, "version": version})
-    raise AppError("QUESTION_STALE", "지금 기다리는 질문이 아니에요. 화면을 새로 불러올게요.",
+    raise AppError("QUESTION_STALE", "지난 질문이에요. 지금 기다리는 질문이 바뀌어서, 방금 보낸 답은 반영하지 않았어요.",
                    {"questionId": qid, "version": version,
                     "current": public(current) if current else None})
 

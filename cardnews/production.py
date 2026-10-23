@@ -45,17 +45,32 @@ def _set_card(card_id: str, **fields):
     return change
 
 
-def _start_result(run: dict, storyboard: dict):
-    """제작이면 새 결과를, 재시도면 그 카드만 새 버전으로 바꾼 결과를 만들어요."""
+UNFINISHED = ("pending", "generating_image")
+
+
+def mark_unfinished(result: dict | None, error: dict) -> dict | None:
+    """끝나지 않은 카드(대기·만드는 중)를 실패로 바꿔요. 서버 재시작·취소 뒤 "만드는 중"으로 남지 않게요."""
+    if not result:
+        return result
+    cards = [{**c, "status": "failed", "error": error} if c["status"] in UNFINISHED else c
+             for c in result["cards"]]
+    return {**result, "cards": cards}
+
+
+def _fresh_result(storyboard: dict, version: int) -> dict:
+    cards = [{"cardId": c["id"], "cardVersion": 1, "status": "pending", "image": None,
+              "error": None} for c in storyboard["cards"]]
+    return {"version": version, "storyboardVersion": storyboard["version"], "cards": cards}
+
+
+def _start_result(storyboard: dict, target_ids: set[str], fresh: bool):
+    """처음 제작이면 새 결과를, 아니면 대상 카드만 새 버전으로 바꾼 결과를 만들어요. 나머지 카드는 그대로예요."""
     def change(result: dict | None) -> dict:
         version = (result or {}).get("version", 0) + 1
-        if run["kind"] == "production":
-            cards = [{"cardId": c["id"], "cardVersion": 1, "status": "pending", "image": None,
-                      "error": None} for c in storyboard["cards"]]
-            return {"version": version, "storyboardVersion": storyboard["version"], "cards": cards}
-        target = run["payload"]["cardId"]
+        if fresh or not result:
+            return _fresh_result(storyboard, version)
         cards = [{**c, "cardVersion": c["cardVersion"] + 1, "status": "pending", "image": None,
-                  "error": None} if c["cardId"] == target else c for c in result["cards"]]
+                  "error": None} if c["cardId"] in target_ids else c for c in result["cards"]]
         return {**result, "version": version, "cards": cards}
     return change
 
@@ -63,10 +78,14 @@ def _start_result(run: dict, storyboard: dict):
 # --- 실행 ----------------------------------------------------------------------------
 
 
-def _targets(run: dict, storyboard: dict) -> list[dict]:
-    if run["kind"] == "production":
-        return storyboard["cards"]
-    return [c for c in storyboard["cards"] if c["id"] == run["payload"]["cardId"]]
+def _targets(run: dict, storyboard: dict, result: dict | None) -> tuple[list[dict], bool]:
+    """(만들 카드, 결과를 새로 시작할지). "이어서 하기"는 끝나지 않은 카드만 만들어요."""
+    if run["kind"] == "image_retry":
+        return [c for c in storyboard["cards"] if c["id"] == run["payload"]["cardId"]], False
+    if run["payload"].get("onlyUnfinished") and result:
+        done = {c["cardId"] for c in result["cards"] if c["status"] == "image_ready"}
+        return [c for c in storyboard["cards"] if c["id"] not in done], False
+    return storyboard["cards"], True
 
 
 def _make_one(ctx: RunContext, generate, tool: str, card: dict, total: int, result: dict) -> None:
@@ -91,8 +110,8 @@ def _fail(card_ids: list[str], err: AppError):
 
 def execute(run: dict, project: dict, ctx: RunContext) -> None:
     storyboard = project["data"]["storyboard"]
-    targets = _targets(run, storyboard)
-    result = _update(run["id"], _start_result(run, storyboard))
+    targets, fresh = _targets(run, storyboard, project["data"]["result"])
+    result = _update(run["id"], _start_result(storyboard, {c["id"] for c in targets}, fresh))
     try:
         generate, tool = _generator(project)
     except AppError as err:

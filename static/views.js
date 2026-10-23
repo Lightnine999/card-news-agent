@@ -113,11 +113,14 @@ export function errorView(p, ui) {
   }
   if (!['failed', 'interrupted'].includes(run.status) || !run.error) return '';
   const seen = new Set();
-  // 엔진 세션이 없으면 이어갈 수 없어서 "이어서 하기"는 숨겨요
-  const usable = run.error.nextActions.filter((a) => a !== 'continue' || p.engine.sessionId);
+  // 그림 작업은 남은 카드만 이어서 만들 수 있어요. 엔진 작업은 엔진 세션이 있어야 이어갈 수 있어요.
+  const images = ['production', 'image_retry'].includes(run.kind);
+  const usable = run.error.nextActions.filter((a) => a !== 'continue' || images || p.engine.sessionId);
+  const labelFor = (mode, label) => (images && mode === 'continue' ? '남은 카드만 이어서 만들기'
+    : images && mode === 'restart' ? '모든 카드 처음부터' : label);
   const buttons = usable.map((a) => ERROR_BUTTONS[a]).filter(Boolean)
     .filter(([mode]) => !seen.has(mode) && seen.add(mode))
-    .map(([mode, label]) => btn(`resume-${mode}`, label, ui, { data: `data-run="${esc(run.id)}"` }))
+    .map(([mode, label]) => btn(`resume-${mode}`, labelFor(mode, label), ui, { data: `data-run="${esc(run.id)}"` }))
     .join('');
   const hint = run.error.nextActions.includes('login')
     ? '<p>터미널에서 로그인한 뒤 다시 시도해 주세요.</p>' : '';

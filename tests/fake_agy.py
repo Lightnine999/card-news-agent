@@ -27,6 +27,12 @@ def main() -> None:
     with open(os.environ["FAKE_AGY_LOG"], "a", encoding="utf-8") as log:
         log.write(json.dumps({"argv": args, "cwd": os.getcwd()}, ensure_ascii=False) + "\n")
     scenario = os.environ.get("FAKE_AGY_SCENARIO", "ok")
+    fail_on = os.environ.get("FAKE_AGY_FAIL_ON")
+    control = os.environ.get("FAKE_AGY_CONTROL")  # 서버를 켠 채로 실패를 바꾸고 싶을 때 쓰는 JSON 파일
+    if control and Path(control).exists():
+        settings = json.loads(Path(control).read_text() or "{}")
+        scenario = settings.get("scenario", scenario)
+        fail_on = settings.get("fail_on", fail_on)
     prompt = args[args.index("-p") + 1]
     if scenario == "auth":
         print("Not signed in. Run agy and sign in with your Google account.", file=sys.stderr)
@@ -34,13 +40,13 @@ def main() -> None:
     if scenario == "not_json":
         print("이미지 생성을 시작했어요")
         return
-    if scenario == "slow":
+    slow_on = settings.get("slow_on") if control and Path(control).exists() else None
+    if scenario == "slow" or (slow_on and slow_on in prompt):  # slow_on: 그 카드부터 멈춘 것처럼 오래 걸려요
         Path(os.environ["FAKE_AGY_PID"]).write_text(str(os.getpid()))
         time.sleep(60)
     cid = str(uuid.uuid4())
     folder = Path(os.environ["FAKE_AGY_BRAIN"]) / cid
     folder.mkdir(parents=True)
-    fail_on = os.environ.get("FAKE_AGY_FAIL_ON")
     if scenario == "stale":  # 호출 전 시각으로 찍힌 오래된 그림만 있어요
         old = folder / "old_image.jpg"
         old.write_bytes(jpeg(896, 1200))
