@@ -10,6 +10,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("CARDNEWS_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("CARDNEWS_ENGINE", "mock")
     monkeypatch.setenv("CARDNEWS_MOCK_DELAY", "0")
+    monkeypatch.setenv("CARDNEWS_RENDERER", "fake")  # 글자 렌더링은 test_render_chromium에서 따로 봐요
     from cardnews import db
     from cardnews.app import app
 

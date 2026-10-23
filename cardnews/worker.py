@@ -17,7 +17,7 @@ from cardnews.util import now_iso
 
 log = logging.getLogger("cardnews.worker")
 POLL_SECONDS = 0.3
-IMAGE_KINDS = ("production", "image_retry")
+IMAGE_KINDS = ("production", "image_retry", "render")
 
 
 def recover_interrupted() -> int:
@@ -26,7 +26,7 @@ def recover_interrupted() -> int:
         rows = conn.execute(
             "SELECT id, kind, project_id FROM runs WHERE status='running' AND dispatch=0").fetchall()
         error = AppError("INTERRUPTED", "서버가 다시 시작돼서 작업이 멈췄어요.").to_dict()
-        card_error = AppError("INTERRUPTED", "서버가 다시 시작돼서 이 카드 그림을 끝내지 못했어요.").to_dict()
+        card_error = AppError("INTERRUPTED", "서버가 다시 시작돼서 이 카드를 끝내지 못했어요.").to_dict()
         for row in rows:
             pipeline.finish_run(conn, row["id"], "interrupted", error)
             if row["kind"] in IMAGE_KINDS:
@@ -96,8 +96,9 @@ def _execute_images(run: dict, project: dict) -> None:
     except Exception:  # 예상 못 한 오류도 run에 남겨 화면에 보여요
         log.exception("run %s 실패", run["id"])
         with db.transaction() as conn:
-            error = AppError("INTERNAL_ERROR", "그림을 만드는 중 예상하지 못한 오류가 났어요.").to_dict()
+            error = AppError("INTERNAL_ERROR", "카드를 만드는 중 예상하지 못한 오류가 났어요.").to_dict()
             pipeline.finish_run(conn, run["id"], "failed", error)
+            _mark_cards(conn, run["projectId"], error)  # "만드는 중"으로 멈춰 있지 않게요
 
 
 def execute(run: dict) -> None:

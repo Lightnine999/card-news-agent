@@ -108,7 +108,7 @@ created → researching → selecting → deep_researching → editing
 | `cancelled` | 사용자가 취소함. 하위 프로세스도 정리됨 |
 | `interrupted` | 서버가 재시작돼서 끊김. 이어하기 또는 재시도를 선택해야 함 |
 
-run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`, `revision`, `image_retry`, `export`.
+run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`, `revision`, `image_retry`, `render`(글자만 다시 올리기, 단계를 바꾸지 않아요), `export`.
 
 ## 2. 데이터 모양
 
@@ -231,7 +231,9 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
       {
         "cardId": "card_1", "cardVersion": 2,
         "status": "pending | generating_image | rendering | done | failed",
-        "pngUrl": "/api/projects/prj_x1/files/results/v3/card_1.png",
+        "pngUrl": "/api/projects/prj_x1/files/results/cards/card_1.v2.png",
+        "layout": { "textArea": "top", "scale": null, "scrim": "auto", "color": "auto", "title": null, "keyLine": null, "body": null, "textEdited": false },
+        "render": { "applied": { "area": "top", "step": 0, "scrim": false, "color": "dark" }, "autoFixes": ["글자 뒤에 옅은 배경을 깔았어요"] },
         "image": {
           "origin": "generated | stock | none",
           "tool": "agy 1.4.5", "conversationId": "...", "prompt": "...", "createdAt": "...",
@@ -286,6 +288,8 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 | 14 | `GET /api/projects/{id}/exports` | 없음 | `200 { resultVersion, files: [...] }` | – |
 | 15 | `GET /api/projects/{id}/files/{path}` **[추가]** | 없음 | 파일 | – |
 | 16 | `GET /api/health` **[추가]** | 없음 | `200 { claude, agy, chromium, font }` 각각 사용 가능 여부 | – |
+| 17 | `POST /api/projects/{id}/cards/{cardId}/layout` **[추가]** | `resultVersion`, `layout`(바꿀 항목만), `requestId` | `202 { runId }` | 필수 |
+| 18 | `POST /api/projects/{id}/render` **[추가]** | `resultVersion`, `requestId` | `202 { runId }` | 필수 |
 
 ### 엔드포인트별 규칙
 
@@ -453,6 +457,16 @@ agy로 못 만들면 Claude CLI로 SVG 그림을 그려 대신 써요. 받은 SV
 - 카드 HTML 템플릿(배경 `object-fit: cover` + 글자 레이어, Pretendard) → Playwright Chromium, 뷰포트 1080×1350, `deviceScaleFactor=1` → PNG.
 - 렌더링 뒤 같은 페이지에서 검사해요: 글자 요소 넘침(`scrollHeight > clientHeight`), 가장 작은 글자 크기(본문 32px 이상 **[AI 기본안]**), 글자와 배경 대비(4.5:1 이상), 360px 너비로 줄였을 때 본문이 약 10.7px 이상인지.
 - 저장한 PNG의 실제 크기가 1080×1350인지 다시 읽어서 확인해요.
+- 설계 상세: [docs/2026-10-23-text-render-design.md](docs/2026-10-23-text-render-design.md) (DECISIONS D18).
+- 카드 상태: `generating_image → rendering → done`. 점검 결과와 상관없이 PNG를 만들면 `done`이고, 점검은 `checks.layout.status`(pass·warn·fail)로 따로 보여 줘요. PNG를 못 만들면 `failed`(`RENDER_FAILED`). 모든 카드가 `done`이면 `reviewing`.
+- 배경 밝기는 글자를 숨긴 채 찍은 화면에서 글자 덩어리 자리를 잘라 재요(평균 → 대비, 표준편차 28 이상 → 겹침 주의).
+- 자동 고침(최대 3번): 넘치면 크기 한 단계(8%) 줄이기 → 대비 부족·겹침이면 글자 뒤 옅은 배경 → 그래도 대비 부족이면 글자 색 반대로. 사용자가 정한 항목은 건드리지 않아요.
+
+**17. 글자 조정** — `stage`가 `producing`·`reviewing`이고 그림이 있는 카드(`done`·`failed`)만 받아요. `layout`은 바꿀 항목만: `textArea`(top·center·bottom), `scale`(auto·-2~2), `scrim`(auto·on·off), `color`(auto·dark·light), `title`(30자)·`keyLine`(60자)·`body`(160자). 그 카드만 새 `cardVersion`으로 글자를 다시 올려요. 배경 그림은 그대로 쓰고 agy를 부르지 않아요.
+
+**18. 글자 올리기** — `stage=producing`에서, 그림은 있는데 아직 `done`이 아닌 카드에 글자를 올려요(글자 렌더링 전에 만든 프로젝트용).
+
+카드 재시도(11)는 그림이 이미 있는 실패 카드면 글자만 다시 올려요(`render`).
 
 ## 5. 저장 위치 (D5)
 
@@ -461,7 +475,8 @@ data/
   app.db
   projects/<projectId>/
     runs/<runId>/          # 엔진 작업 폴더, 원시 출력, 로그
-    results/v<버전>/       # 카드 PNG, 렌더용 HTML
+    results/images/        # 배경 그림 card_N.v<카드 버전>.jpg|svg
+    results/cards/         # 글자 올린 카드 card_N.v<카드 버전>.png + 렌더용 .html(파일 엔드포인트로는 안 내줘요)
     exports/v<버전>/       # 최종 승인 버전 내보내기
 ```
 

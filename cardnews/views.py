@@ -26,8 +26,9 @@ def _research_view(data: dict) -> dict | None:
 def _result_view(project_id: str, result: dict | None) -> dict | None:
     if not result:
         return result
-    cards = [{**c, "imageUrl": f"/api/projects/{project_id}/files/{c['image']['file']}"
-              if c.get("image") else None} for c in result["cards"]]
+    base = f"/api/projects/{project_id}/files/"
+    cards = [{**c, "imageUrl": base + c["image"]["file"] if c.get("image") else None,
+              "pngUrl": base + c["png"] if c.get("png") else None} for c in result["cards"]]
     return {**result, "cards": cards}
 
 

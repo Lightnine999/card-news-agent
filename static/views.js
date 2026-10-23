@@ -12,6 +12,7 @@ const TEXT_AREA_LABEL = { top: '위쪽', bottom: '아래쪽', center: '가운데
 const ROLE_LABEL = { cover: '표지', body: '본문', summary: '요약', next_action: '다음 행동' };
 const KIND_LABEL = {
   research: '넓은 조사', deep_research: '심층 조사', storyboard: '스토리보드 수정', production: '제작',
+  image_retry: '카드 다시 만들기', render: '글자 올리기',
 };
 const MAX_SELECTION = 3;
 
@@ -114,7 +115,7 @@ export function errorView(p, ui) {
   if (!['failed', 'interrupted'].includes(run.status) || !run.error) return '';
   const seen = new Set();
   // 그림 작업은 남은 카드만 이어서 만들 수 있어요. 엔진 작업은 엔진 세션이 있어야 이어갈 수 있어요.
-  const images = ['production', 'image_retry'].includes(run.kind);
+  const images = ['production', 'image_retry', 'render'].includes(run.kind);
   const usable = run.error.nextActions.filter((a) => a !== 'continue' || images || p.engine.sessionId);
   const labelFor = (mode, label) => (images && mode === 'continue' ? '남은 카드만 이어서 만들기'
     : images && mode === 'restart' ? '모든 카드 처음부터' : label);
@@ -281,8 +282,10 @@ export function storyboardView(p, ui) {
 // --- 제작 (S6) -------------------------------------------------------------------
 
 const CARD_STATUS = {
-  pending: '대기', generating_image: '그림 만드는 중', image_ready: '그림 준비됨', failed: '실패',
+  pending: '대기', generating_image: '그림 만드는 중', image_ready: '그림 준비됨', rendering: '글자 넣는 중',
+  done: '완료', failed: '실패',
 };
+const CHECK_LABEL = { pass: '점검 통과', warn: '점검 주의', fail: '점검 실패' };
 
 function imageMeta(img) {
   const [w, h] = img.originalSize;
@@ -292,44 +295,177 @@ function imageMeta(img) {
   return `${esc(img.disclosure)} · ${esc(img.tool)} · ${size}${instead}`;
 }
 
+const layoutChecks = (card) => card.checks?.layout || null;
+
+function checkBadge(card) {
+  const checks = layoutChecks(card);
+  return checks ? `<span class="badge chk-${esc(checks.status)}">${CHECK_LABEL[checks.status]}</span>` : '';
+}
+
+function cardButtons(card, version, ui) {
+  const data = `data-card="${esc(card.cardId)}" data-version="${version}"`;
+  if (card.status === 'failed' && card.error) {
+    const label = card.image ? '이 카드 글자 다시 올리기' : '이 카드 다시 만들기';
+    return `<p class="card-error">${esc(card.error.message)} <span class="muted">(${esc(card.error.code)})</span></p>
+      ${btn(`retry-card:${card.cardId}`, label, ui, { data })}`;
+  }
+  if (['image_ready', 'done'].includes(card.status) && card.image?.fallbackFrom) {
+    return btn(`retry-card:${card.cardId}`, 'agy로 다시 만들기', ui, { data });
+  }
+  return '';
+}
+
 function productionCard(card, sb, version, ui) {
   const plan = sb.cards.find((c) => c.id === card.cardId) || {};
-  const thumb = card.imageUrl
-    ? `<img src="${esc(card.imageUrl)}" alt="${esc(plan.title || card.cardId)} 배경 그림" loading="lazy">`
-    : `<div class="thumb-empty">${card.status === 'generating_image' ? '<span class="spinner"></span>' : ''}${esc(CARD_STATUS[card.status])}</div>`;
-  const error = card.status === 'failed' && card.error ? `
-    <p class="card-error">${esc(card.error.message)} <span class="muted">(${esc(card.error.code)})</span></p>
-    ${btn(`retry-card:${card.cardId}`, '이 카드 다시 만들기', ui, { data: `data-card="${esc(card.cardId)}" data-version="${version}"` })}`
-    : card.status === 'image_ready' && card.image?.fallbackFrom
-      ? btn(`retry-card:${card.cardId}`, 'agy로 다시 만들기', ui, { data: `data-card="${esc(card.cardId)}" data-version="${version}"` })
-      : '';
+  const src = card.pngUrl || card.imageUrl;
+  const busy = ['generating_image', 'rendering'].includes(card.status);
+  const thumb = src
+    ? `<img src="${esc(src)}" alt="${esc(plan.title || card.cardId)} 카드" loading="lazy">`
+    : `<div class="thumb-empty">${busy ? '<span class="spinner"></span>' : ''}${esc(CARD_STATUS[card.status])}</div>`;
   return `
     <article class="prod-card st-${esc(card.status)}">
       <div class="thumb">${thumb}</div>
       <p><b>${plan.order ?? ''}. ${esc(plan.title || card.cardId)}</b></p>
-      <p class="muted">${esc(CARD_STATUS[card.status] || card.status)}${card.cardVersion > 1 ? ` · v${card.cardVersion}` : ''}</p>
+      <p class="muted">${busy ? '<span class="spinner"></span>' : ''}${esc(CARD_STATUS[card.status] || card.status)}${card.cardVersion > 1 ? ` · v${card.cardVersion}` : ''} ${checkBadge(card)}</p>
       ${card.image ? `<p class="small muted">${imageMeta(card.image)}</p>` : ''}
-      ${error}
+      ${cardButtons(card, version, ui)}
     </article>`;
 }
 
 export function producingView(p, ui) {
   const result = p.result;
   if (!result) return '';
-  const ready = result.cards.filter((c) => c.status === 'image_ready').length;
+  const done = result.cards.filter((c) => c.status === 'done').length;
   const failed = result.cards.filter((c) => c.status === 'failed').length;
+  const waiting = result.cards.some((c) => c.image && !['done', 'rendering'].includes(c.status) && c.status !== 'failed');
+  const renderBtn = waiting && !p.activeRun
+    ? `<div class="row end">${btn('render-pending', '그림 위에 글자 올리기', ui, { cls: 'primary', data: `data-version="${result.version}"` })}</div>` : '';
   return `
     <section class="panel">
-      <h2>배경 그림 ${ready}/${result.cards.length}장 준비됨${failed ? ` · 실패 ${failed}장` : ''}</h2>
-      <p class="muted">글자는 그림에 넣지 않고, 5단계에서 연결할 렌더러가 따로 올려요. 지금은 배경 그림까지만 만들어요.</p>
+      <h2>카드 ${done}/${result.cards.length}장 완성${failed ? ` · 실패 ${failed}장` : ''}</h2>
+      <p class="muted">배경 그림을 만든 뒤 제목·핵심·본문을 글자로 따로 올려요. 그림 안에는 글자를 넣지 않아요.</p>
+      ${renderBtn}
       <div class="prod-grid">${result.cards.map((c) => productionCard(c, p.storyboard, result.version, ui)).join('')}</div>
     </section>`;
+}
+
+// --- 검수 (S7): 휴대폰 미리보기와 글자 조정 ------------------------------------------
+
+const PHONE_WIDTH = 360;
+const SCALE_OPTIONS = [['auto', '자동'], ['-2', '아주 작게'], ['-1', '작게'], ['0', '기본'], ['1', '크게'], ['2', '아주 크게']];
+const AREA_OPTIONS = [['top', '위'], ['center', '가운데'], ['bottom', '아래']];
+const SCRIM_OPTIONS = [['auto', '자동'], ['on', '켜기'], ['off', '끄기']];
+const COLOR_OPTIONS = [['auto', '자동'], ['dark', '어둡게'], ['light', '밝게']];
+const TEXT_LIMITS = { title: 30, keyLine: 60, body: 160 };
+const TEXT_LABEL = { title: '제목', keyLine: '핵심 문장', body: '본문' };
+const PROBLEM_LABEL = { small: '글자 작음', contrast: '대비 부족', busy: '그림과 겹침' };
+
+function reviewTile(card, plan, ui) {
+  const open = ui.openCard === card.cardId;
+  return `
+    <button class="review-tile ${open ? 'open' : ''}" data-action="open-card" data-card="${esc(card.cardId)}">
+      ${card.pngUrl ? `<img src="${esc(card.pngUrl)}" alt="${esc(plan.title)} 카드">` : `<span class="thumb-empty">${esc(CARD_STATUS[card.status])}</span>`}
+      <span class="tile-label">${plan.order}. ${esc(plan.title)} ${checkBadge(card)}</span>
+    </button>`;
+}
+
+function phoneFrame(card) {
+  // 점검에 걸린 글자 자리를 카드 크기에 대한 비율로 표시해요. 틀이 좁아져도 위치가 맞아요.
+  const pct = (n, total) => `${(n / total * 100).toFixed(2)}%`;
+  const boxes = (layoutChecks(card)?.blocks || []).filter((b) => b.problems.length).map((b) => {
+    const [x, y, w, h] = b.rect;
+    const label = b.problems.map((k) => PROBLEM_LABEL[k] || k).join(' · ');
+    return `<span class="problem-box" style="left:${pct(x, 1080)};top:${pct(y, 1350)};width:${pct(w, 1080)};height:${pct(h, 1350)}" title="${esc(label)}"></span>`;
+  }).join('');
+  return `
+    <figure class="phone">
+      <div class="phone-screen" style="width:${PHONE_WIDTH + 20}px">
+        <div class="phone-content"><img src="${esc(card.pngUrl)}" alt="휴대폰 너비 ${PHONE_WIDTH}px 미리보기">${boxes}</div>
+      </div>
+      <figcaption class="small muted">휴대폰 화면 너비 ${PHONE_WIDTH}px. 빨간 테두리는 점검에 걸린 글자예요.</figcaption>
+    </figure>`;
+}
+
+function select(name, cardId, options, current, ui) {
+  const key = `layout:${cardId}:${name}`;
+  const value = String(ui.drafts[key] ?? current);
+  const opts = options.map(([v, label]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${label}</option>`).join('');
+  return `<select data-draft="${esc(key)}" name="${name}">${opts}</select>`;
+}
+
+export function currentTexts(card, plan) {
+  const lay = card.layout || {};
+  return Object.fromEntries(Object.keys(TEXT_LIMITS).map((k) => [k, lay[k] ?? plan[k] ?? '']));
+}
+
+function layoutForm(card, plan, version, ui) {
+  const lay = card.layout || {};
+  const texts = currentTexts(card, plan);
+  const names = plan.role === 'cover' ? ['title', 'keyLine'] : ['title', 'keyLine', 'body'];
+  const fields = names.map((k) => {
+    const key = `layout:${card.cardId}:${k}`;
+    const value = ui.drafts[key] ?? texts[k];
+    const input = k === 'body'
+      ? `<textarea data-draft="${esc(key)}" maxlength="${TEXT_LIMITS[k]}" rows="3">${esc(value)}</textarea>`
+      : `<input data-draft="${esc(key)}" maxlength="${TEXT_LIMITS[k]}" value="${esc(value)}">`;
+    return `<label class="field">${TEXT_LABEL[k]} <span class="muted small">(${TEXT_LIMITS[k]}자까지)</span>${input}</label>`;
+  }).join('');
+  return `
+    <div class="layout-form">
+      <div class="controls">
+        <label>글자 위치 ${select('textArea', card.cardId, AREA_OPTIONS, lay.textArea || 'top', ui)}</label>
+        <label>글자 크기 ${select('scale', card.cardId, SCALE_OPTIONS, lay.scale ?? 'auto', ui)}</label>
+        <label>글자 뒤 배경 ${select('scrim', card.cardId, SCRIM_OPTIONS, lay.scrim || 'auto', ui)}</label>
+        <label>글자 색 ${select('color', card.cardId, COLOR_OPTIONS, lay.color || 'auto', ui)}</label>
+      </div>
+      ${fields}
+      ${lay.textEdited ? '<p class="small warn-text">문구를 스토리보드와 다르게 고쳤어요. 사실·출처 점검에서 다시 봐요.</p>' : ''}
+      <div class="row end">${btn(`apply-layout:${card.cardId}`, '이 카드에 적용', ui, { cls: 'primary', data: `data-card="${esc(card.cardId)}" data-version="${version}"` })}</div>
+      <p class="small muted">적용하면 이 카드만 글자를 다시 올려요. 배경 그림과 다른 카드는 그대로예요.</p>
+    </div>`;
+}
+
+function cardDetail(card, plan, version, ui) {
+  const checks = layoutChecks(card);
+  const items = checks?.items?.length
+    ? `<ul class="check-items">${checks.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`
+    : '<p class="ok">잘림·크기·대비·겹침 점검을 모두 통과했어요.</p>';
+  const fixes = card.render?.autoFixes?.length
+    ? `<p class="small muted">자동으로 고친 것: ${card.render.autoFixes.map(esc).join(' → ')}</p>` : '';
+  const numbers = checks
+    ? `<p class="small muted">가장 작은 글자 ${checks.minFontPx}px · 대비 ${checks.contrastRatio}:1 · 얼룩짐 ${checks.busy} · ${checks.size.join('×')}</p>` : '';
+  return `
+    <section class="panel card-detail">
+      <div class="row"><h2>${plan.order}. ${esc(plan.title)} ${checkBadge(card)}</h2>
+        <span class="muted small">v${card.cardVersion}</span></div>
+      ${card.status !== 'done' ? `<p class="muted">${esc(CARD_STATUS[card.status])}</p>${cardButtons(card, version, ui)}` : ''}
+      ${card.pngUrl ? `<div class="preview-pair">
+        <figure class="original"><img src="${esc(card.pngUrl)}" alt="원본 1080×1350"><figcaption class="small muted">원본 1080×1350 (축소)</figcaption></figure>
+        ${phoneFrame(card)}</div>` : ''}
+      ${items}${fixes}${numbers}
+      ${card.image ? layoutForm(card, plan, version, ui) : ''}
+    </section>`;
+}
+
+export function reviewingView(p, ui) {
+  const result = p.result;
+  if (!result) return '';
+  const plans = Object.fromEntries(p.storyboard.cards.map((c) => [c.id, c]));
+  const counts = { pass: 0, warn: 0, fail: 0 };
+  result.cards.forEach((c) => { const s = layoutChecks(c)?.status; if (s) counts[s] += 1; });
+  const open = result.cards.find((c) => c.cardId === ui.openCard) || result.cards[0];
+  return `
+    <section class="panel">
+      <h2>검수 · 카드 ${result.cards.length}장</h2>
+      <p class="muted">점검 통과 ${counts.pass} · 주의 ${counts.warn} · 실패 ${counts.fail}. 카드를 누르면 휴대폰 크기로 보고 글자를 고칠 수 있어요.</p>
+      <div class="review-grid">${result.cards.map((c) => reviewTile(c, plans[c.cardId], { ...ui, openCard: open.cardId })).join('')}</div>
+    </section>
+    ${cardDetail(open, plans[open.cardId], result.version, ui)}`;
 }
 
 export function placeholderView(p) {
   const text = {
     created: '아직 조사를 시작하지 않았어요.',
-    reviewing: '검수 화면은 구현 5단계에서 연결해요.',
     final_approved: '내려받기 화면은 구현 5단계에서 연결해요.',
   }[p.stage];
   return text ? `<section class="panel notice">${esc(text)}</section>` : '';

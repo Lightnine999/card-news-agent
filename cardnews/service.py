@@ -34,7 +34,7 @@ def idempotent(scope: str, request_id: str | None, endpoint: str, body: dict, ac
 # --- 공통 확인 -----------------------------------------------------------------
 
 
-IMAGE_KINDS = ("production", "image_retry")
+IMAGE_KINDS = ("production", "image_retry", "render")
 
 
 def _require_stage(project: dict, *stages: str) -> None:
@@ -61,7 +61,8 @@ def _start_run(conn, project: dict, kind: str, payload: dict) -> tuple[dict, dic
         **payload, "phase": "start", "prevStage": project["stage"],
         "engineName": project["engineName"],
     })
-    updated = repo.save_project(conn, {**project, "stage": pipeline.STAGE_OF_KIND[kind]})
+    stage = pipeline.STAGE_OF_KIND.get(kind, project["stage"])  # 글자만 올리는 run은 단계를 바꾸지 않아요
+    updated = repo.save_project(conn, {**project, "stage": stage})
     return updated, run
 
 
@@ -179,9 +180,7 @@ def _approve_final(conn, project: dict, version: int) -> dict:
     return {"finalApproval": approval}
 
 
-def retry_card(conn, project_id: str, card_id: str, result_version: int) -> dict:
-    project = repo.get_project(conn, project_id)
-    _require_stage(project, "producing")
+def _result_card(project: dict, card_id: str, result_version: int) -> tuple[dict, dict]:
     result = project["data"]["result"]
     if result is None:
         raise AppError("STAGE_CONFLICT", "아직 제작 결과가 없어요.")
@@ -189,12 +188,62 @@ def retry_card(conn, project_id: str, card_id: str, result_version: int) -> dict
     card = next((c for c in result["cards"] if c["cardId"] == card_id), None)
     if card is None:
         raise AppError("NOT_FOUND", "카드를 찾지 못했어요.", {"cardId": card_id})
-    redraw = card["status"] == "image_ready" and (card.get("image") or {}).get("fallbackFrom")
+    return result, card
+
+
+def retry_card(conn, project_id: str, card_id: str, result_version: int) -> dict:
+    """실패한 카드 다시 만들기. 그림이 이미 있으면 글자만 다시 올려요(agy를 부르지 않아요)."""
+    project = repo.get_project(conn, project_id)
+    _require_stage(project, "producing", "reviewing")
+    _, card = _result_card(project, card_id, result_version)
+    redraw = card["status"] in ("image_ready", "done") and (card.get("image") or {}).get("fallbackFrom")
     if card["status"] != "failed" and not redraw:  # agy 대신 그린 카드는 agy로 다시 그릴 수 있어요
         raise AppError("STAGE_CONFLICT", "실패했거나 대신 그린 카드만 다시 만들 수 있어요.",
                        {"status": card["status"]})
     _require_idle(conn, project_id)
-    _, run = _start_run(conn, project, "image_retry", {"cardId": card_id})
+    if card["status"] == "failed" and card.get("image"):
+        _, run = _start_run(conn, project, "render", {"cardIds": [card_id]})
+    else:
+        _, run = _start_run(conn, project, "image_retry", {"cardId": card_id})
+    return {"runId": run["id"]}
+
+
+TEXT_FIELDS = ("title", "keyLine", "body")
+
+
+def update_layout(conn, project_id: str, card_id: str, result_version: int, change: dict) -> dict:
+    """사용자가 고친 글자 배치를 저장하고 그 카드만 글자를 다시 올려요. 그림은 그대로예요."""
+    project = repo.get_project(conn, project_id)
+    _require_stage(project, "producing", "reviewing")
+    result, card = _result_card(project, card_id, result_version)
+    if not card.get("image") or card["status"] not in ("done", "failed"):
+        raise AppError("STAGE_CONFLICT", "그림이 준비된 카드만 글자를 고칠 수 있어요.", {"status": card["status"]})
+    _require_idle(conn, project_id)
+    plan = next(c for c in project["data"]["storyboard"]["cards"] if c["id"] == card_id)
+    layout = {**(card.get("layout") or production.default_layout(plan)), **change}
+    if layout.get("scale") == "auto":
+        layout = {**layout, "scale": None}
+    edited = any(layout.get(k) is not None and layout[k] != plan.get(k) for k in TEXT_FIELDS)
+    layout = {**layout, "textEdited": edited}
+    cards = [{**c, "layout": layout} if c["cardId"] == card_id else c for c in result["cards"]]
+    project = {**project, "data": {**project["data"], "result": {**result, "cards": cards}}}
+    _, run = _start_run(conn, project, "render", {"cardIds": [card_id]})
+    return {"runId": run["id"]}
+
+
+def render_pending(conn, project_id: str, result_version: int) -> dict:
+    """그림은 있는데 글자를 아직 안 올린 카드에 글자를 올려요 (글자 렌더링 전에 만든 프로젝트용)."""
+    project = repo.get_project(conn, project_id)
+    _require_stage(project, "producing")
+    result = project["data"]["result"]
+    if result is None:
+        raise AppError("STAGE_CONFLICT", "아직 제작 결과가 없어요.")
+    _require_version(result["version"], result_version)
+    ids = [c["cardId"] for c in result["cards"] if c.get("image") and c["status"] != "done"]
+    if not ids:
+        raise AppError("STAGE_CONFLICT", "글자를 올릴 카드가 없어요.")
+    _require_idle(conn, project_id)
+    _, run = _start_run(conn, project, "render", {"cardIds": ids})
     return {"runId": run["id"]}
 
 
@@ -211,7 +260,7 @@ def cancel_run(conn, run_id: str) -> dict:
     project = repo.get_project(conn, run["projectId"])
     data = questions.stale_for_run(project["data"], run_id)
     if run["kind"] in IMAGE_KINDS:
-        card_error = AppError("CANCELLED", "취소해서 이 카드 그림을 끝내지 못했어요.").to_dict()
+        card_error = AppError("CANCELLED", "취소해서 이 카드를 끝내지 못했어요.").to_dict()
         data = {**data, "result": production.mark_unfinished(data["result"], card_error)}
     repo.save_project(conn, {**project, "stage": run["payload"]["prevStage"], "data": data})
     return {"status": "cancelled"}
@@ -235,5 +284,5 @@ def resume_run(conn, run_id: str, mode: str) -> dict:
     payload = {**payload, "phase": "start", "requestedAt": None,
                "onlyUnfinished": images and mode == "continue"}
     new_run = repo.insert_run(conn, project["id"], run["kind"], payload, resumed_from=run_id)
-    repo.save_project(conn, {**project, "stage": pipeline.STAGE_OF_KIND[run["kind"]]})
+    repo.save_project(conn, {**project, "stage": pipeline.STAGE_OF_KIND.get(run["kind"], project["stage"])})
     return {"runId": new_run["id"]}

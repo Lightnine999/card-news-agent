@@ -29,6 +29,11 @@
    ```bash
    uv sync
    ```
+4. 카드에 글자를 올릴 헤드리스 브라우저(Chromium, 약 100MB 내려받기)를 설치해요. 한 번만 하면 돼요.
+   ```bash
+   uv run playwright install chromium
+   ```
+   글꼴(Pretendard 1.3.9, SIL OFL)은 `static/fonts/`에 들어 있어요. 출처는 `static/fonts/PROVENANCE.md`에 있어요.
 
 ### 3. 켜기 (모의 모드)
 2번에서 이동한 폴더에서 입력해요.
@@ -78,6 +83,7 @@ uv run cardnews
 |---|---|
 | `command not found: uv` | 2번의 uv 설치 후 터미널 창을 새로 열어요 |
 | `포트 8765을(를) 이미 다른 프로그램이 쓰고 있어요` | 앱이 이미 켜져 있는지 다른 터미널 창을 확인해요. 다른 프로그램이면 `uv run cardnews --port 8766`으로 켜고 `http://127.0.0.1:8766`을 열어요 |
+| 카드가 "실패: 글자를 올릴 브라우저(Chromium)를 실행하지 못했어요" | 2-4번의 `uv run playwright install chromium`을 실행하고 [이 카드 글자 다시 올리기]를 눌러요 |
 | 브라우저에 "연결할 수 없음" | 앱을 켠 터미널 창이 아직 열려 있는지, 거기에 오류가 없는지 봐요 |
 | `error: Failed to spawn: cardnews` (`No such file or directory`) | 앱 폴더가 아닌 곳에서 입력했어요. 2번의 `cd`부터 다시 해요 |
 
@@ -92,9 +98,10 @@ uv run pytest
 ### 파일 구성
 - `cardnews/app.py` 웹 API · `service.py` 요청 규칙 · `pipeline.py` 엔진 결과 반영 · `worker.py` 작업 프로세스
 - `cardnews/engines/` 엔진 연결: `claude_cli.py`(실행), `claude_prompts.py`(지시문), `claude_schema.py`(결과 형식·거르기), `mock.py`
-- `static/` 화면 (빌드 단계 없는 HTML/JS)
+- `cardnews/images/` 배경 그림(agy·Claude CLI SVG) · `cardnews/render/` 글자 올리기(HTML·Chromium·점검·자동 고침)
+- `static/` 화면 (빌드 단계 없는 HTML/JS), `static/fonts/` Pretendard
 - `data/` 실행 데이터. 커밋하지 않아요(.gitignore).
-- 설계 문서: `DECISIONS.md`(결정 기록), `API_SPEC.md`, `SCREEN_FLOW.md`, `DESIGN.md`
+- 설계 문서: `DECISIONS.md`(결정 기록), `API_SPEC.md`, `SCREEN_FLOW.md`, `DESIGN.md`, `docs/`(글자 렌더링 설계·계획)
 
 ---
 

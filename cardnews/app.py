@@ -118,6 +118,30 @@ class RetryCard(BaseModel):
     requestId: str = request_id()
 
 
+class LayoutChange(BaseModel):
+    """바꿀 항목만 보내요. 보내지 않은 항목은 그대로예요 (설계: 직접 조정)."""
+    textArea: Literal["top", "center", "bottom"] | None = None
+    scale: Literal["auto", -2, -1, 0, 1, 2] | None = None
+    scrim: Literal["auto", "on", "off"] | None = None
+    color: Literal["auto", "dark", "light"] | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=30)
+    keyLine: str | None = Field(default=None, min_length=1, max_length=60)
+    body: str | None = Field(default=None, min_length=1, max_length=160)
+
+    @field_validator("title", "keyLine", "body")
+    @classmethod
+    def _not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("빈 문구는 보낼 수 없어요.")  # 공백만 보내면 카드에서 글자가 사라져요
+        return value.strip() if value is not None else value
+
+
+class CardLayout(BaseModel):
+    resultVersion: int
+    layout: LayoutChange
+    requestId: str = request_id()
+
+
 class Resume(BaseModel):
     mode: Literal["continue", "restart"]
     requestId: str = request_id()
@@ -223,6 +247,25 @@ def retry_card(project_id: str, card_id: str, req: RetryCard):
                                        _body(req), action))
 
 
+@app.post("/api/projects/{project_id}/cards/{card_id}/layout")
+def card_layout(project_id: str, card_id: str, req: CardLayout):
+    change = req.layout.model_dump(exclude_none=True)
+
+    def action(conn):
+        return 202, service.update_layout(conn, project_id, card_id, req.resultVersion, change)
+
+    return _respond(service.idempotent(project_id, req.requestId, f"layout:{card_id}",
+                                       _body(req), action))
+
+
+@app.post("/api/projects/{project_id}/render")
+def render_pending(project_id: str, req: RetryCard):
+    def action(conn):
+        return 202, service.render_pending(conn, project_id, req.resultVersion)
+
+    return _respond(service.idempotent(project_id, req.requestId, "render", _body(req), action))
+
+
 PROJECT_ID = re.compile(r"^prj_[0-9a-f]{12}$")
 
 
@@ -269,14 +312,23 @@ def resume_run(run_id: str, req: Resume):
 # --- 상태 점검 -------------------------------------------------------------------
 
 
+def _chromium_installed() -> bool:
+    """Playwright가 받은 Chromium이 있는지만 봐요(실행은 실제 렌더링에서 확인해요)."""
+    import os
+    from pathlib import Path
+    default = Path.home() / "Library" / "Caches" / "ms-playwright"
+    folder = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", default))
+    return folder.is_dir() and any(folder.glob("chromium*"))
+
+
 @app.get("/api/health")
 def health():
-    font_dir = config.ROOT / "assets" / "fonts"
+    font_dir = config.ROOT / "static" / "fonts"
     return {
         "engine": config.engine_name(),
         "claude": shutil.which("claude") is not None,
         "agy": shutil.which("agy") is not None,
-        "chromium": False,  # 렌더러는 5단계에서 연결해요
+        "chromium": _chromium_installed(),
         "font": any(font_dir.glob("Pretendard*")) if font_dir.exists() else False,
         "login": "unknown",  # 로그인 여부는 실제 호출에서만 알 수 있어요
     }

@@ -314,11 +314,12 @@ def test_storyboard_approval_starts_image_production(client, run_worker):
     run_worker()
     p = get(client, pid)
     assert p["storyboard"]["approvedAt"]
-    assert p["stage"] == "producing"
+    assert p["stage"] == "reviewing"  # 모든 카드에 글자까지 올리면 검수 단계로
     assert p["lastRun"]["status"] == "succeeded"
-    # 모의 엔진 프로젝트는 agy 대신 모의 그림을 써요. 글자 렌더링은 5단계에서 이어 붙여요.
-    assert {c["status"] for c in p["result"]["cards"]} == {"image_ready"}
+    # 모의 엔진 프로젝트는 agy 대신 모의 그림을 써요.
+    assert {c["status"] for c in p["result"]["cards"]} == {"done"}
     assert p["result"]["cards"][0]["image"]["origin"] == "mock"
+    assert p["result"]["cards"][0]["pngUrl"].endswith("results/cards/card_1.v1.png")
 
 
 def test_storyboard_approval_with_old_version_is_rejected(client, run_worker):

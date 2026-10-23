@@ -45,6 +45,11 @@ def image_fallback() -> str:
     return os.environ.get("CARDNEWS_IMAGE_FALLBACK", "claude")
 
 
+def renderer() -> str:
+    """글자 렌더러: chromium(D8) 또는 fake(흐름 테스트용)."""
+    return os.environ.get("CARDNEWS_RENDERER", "chromium")
+
+
 def agy_bin() -> str:
     return os.environ.get("CARDNEWS_AGY_BIN", "agy")
 

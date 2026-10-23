@@ -15,6 +15,7 @@ const ui = {
   requestIds: {},          // 버튼 하나 = 사용자 행동 하나 = requestId 하나
   drafts: {},              // 입력 중인 글·선택 (다시 그려도 남게)
   selected: new Set(),     // 체크한 후보
+  openCard: null,          // 검수 화면에서 크게 보는 카드
   saving: false,
 };
 let project = null;
@@ -43,6 +44,7 @@ function render() {
   if (['deep_researching', 'editing', 'storyboard_review'].includes(p.stage)) parts.push(V.notesView(p));
   if (p.stage === 'storyboard_review') parts.push(V.storyboardView(p, ui));
   if (p.stage === 'producing') parts.push(V.producingView(p, ui));
+  if (p.stage === 'reviewing') parts.push(V.reviewingView(p, ui));
   parts.push(V.placeholderView(p));
   $app.innerHTML = parts.join('');
 }
@@ -134,6 +136,33 @@ const actions = {
   'retry-card': (el) => act(`retry-card:${el.dataset.card}`, (rid) => post(
     `${base()}/cards/${el.dataset.card}/retry`, { resultVersion: Number(el.dataset.version), requestId: rid },
   )),
+  'render-pending': (el) => act('render-pending', (rid) => post(`${base()}/render`, {
+    resultVersion: Number(el.dataset.version), requestId: rid,
+  })),
+  'open-card': (el) => { ui.openCard = el.dataset.card; render(); },
+  'apply-layout': (el) => {
+    const id = el.dataset.card;
+    const card = project.result.cards.find((c) => c.cardId === id);
+    const plan = project.storyboard.cards.find((c) => c.id === id);
+    const lay = card.layout || {};
+    const draft = (k, fallback) => ui.drafts[`layout:${id}:${k}`] ?? fallback;
+    const scale = draft('scale', lay.scale ?? 'auto');
+    const layout = {
+      textArea: draft('textArea', lay.textArea || 'top'),
+      scale: scale === 'auto' ? 'auto' : Number(scale),
+      scrim: draft('scrim', lay.scrim || 'auto'),
+      color: draft('color', lay.color || 'auto'),
+    };
+    const texts = V.currentTexts(card, plan);
+    for (const k of plan.role === 'cover' ? ['title', 'keyLine'] : ['title', 'keyLine', 'body']) {
+      const value = draft(k, texts[k]).trim();
+      if (value && value !== texts[k]) layout[k] = value;  // 바뀐 문구만 보내요
+    }
+    return act(`apply-layout:${id}`, async (rid) => {
+      await post(`${base()}/cards/${id}/layout`, { resultVersion: Number(el.dataset.version), layout, requestId: rid });
+      Object.keys(ui.drafts).filter((k) => k.startsWith(`layout:${id}:`)).forEach((k) => delete ui.drafts[k]);
+    });
+  },
   create: () => act('create', async (rid) => {
     const form = document.getElementById('create-form');
     if (!form.reportValidity()) return;
@@ -184,12 +213,14 @@ $app.addEventListener('change', (event) => {
   const el = event.target;
   if (el.dataset.candidate) toggleCandidate(el);
   else if (el.type === 'radio' && el.dataset.draft) { ui.drafts[el.dataset.draft] = el.value; render(); }
+  else if (el.tagName === 'SELECT' && el.dataset.draft) ui.drafts[el.dataset.draft] = el.value;
 });
 
 $app.addEventListener('input', (event) => {
   const el = event.target;
   if (el.dataset.draft && el.type !== 'radio') {
     ui.drafts[el.dataset.draft] = el.value;
+    if (el.dataset.draft.startsWith('layout:')) return;  // 글자 조정 입력은 적용 버튼으로 보내요
     let action = 'feedback';
     if (el.dataset.draft.startsWith('free:')) {
       // 직접 입력칸에 쓰면 "직접 입력"을 고른 것으로 봐요

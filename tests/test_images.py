@@ -36,6 +36,7 @@ def app_client(tmp_path, monkeypatch):
         "FAKE_AGY_LOG": str(tmp_path / "agy-calls.jsonl"), "FAKE_AGY_PID": str(tmp_path / "agy.pid"),
         "CARDNEWS_CLAUDE_BIN": str(claude), "FAKE_CLAUDE_LOG": str(tmp_path / "claude-calls.jsonl"),
         "CARDNEWS_IMAGE_FALLBACK": "none",  # 대신 만들기는 그 테스트에서만 켜요
+        "CARDNEWS_RENDERER": "fake",  # 글자 렌더링은 test_render_chromium에서 따로 봐요
     }.items():
         monkeypatch.setenv(key, value)
     from cardnews import db
@@ -94,10 +95,10 @@ def produced(c):
 def test_each_card_gets_a_verified_image(app_client):
     pid, p = produced(app_client)
     result = p["result"]
-    assert p["stage"] == "producing" and p["lastRun"]["status"] == "succeeded"
+    assert p["stage"] == "reviewing" and p["lastRun"]["status"] == "succeeded"
     assert len(result["cards"]) == len(p["storyboard"]["cards"])
     for card in result["cards"]:
-        assert card["status"] == "image_ready", card
+        assert card["status"] == "done", card
         img = card["image"]
         assert img["tool"] == "agy 1.4.5" and img["origin"] == "generated"
         assert img["originalFormat"] == "jpeg" and img["originalSize"] == [896, 1200]
@@ -126,7 +127,7 @@ def test_one_card_failing_keeps_others(app_client, monkeypatch):
     monkeypatch.setenv("FAKE_AGY_FAIL_ON", "카드 2/")
     _, p = produced(app_client)
     statuses = [c["status"] for c in p["result"]["cards"]]
-    assert statuses[1] == "failed" and statuses.count("image_ready") == len(statuses) - 1
+    assert statuses[1] == "failed" and statuses.count("done") == len(statuses) - 1
     err = p["result"]["cards"][1]["error"]
     assert err["code"] == "IMAGE_FAILED" and "retry_card" in err["nextActions"]
     assert p["lastRun"]["status"] == "succeeded"
@@ -143,7 +144,7 @@ def test_retry_remakes_only_that_card(app_client, monkeypatch):
     work()
     p2 = get(app_client, pid)
     cards = {c["cardId"]: c for c in p2["result"]["cards"]}
-    assert cards["card_2"]["status"] == "image_ready" and cards["card_2"]["cardVersion"] == 2
+    assert cards["card_2"]["status"] == "done" and cards["card_2"]["cardVersion"] == 2
     assert p2["result"]["version"] == p["result"]["version"] + 1
     for cid, image in before.items():
         if cid != "card_2":
@@ -211,7 +212,7 @@ def test_mock_projects_use_local_placeholder_images(app_client, monkeypatch):
     monkeypatch.setenv("CARDNEWS_IMAGE_GEN", "auto")  # 모의 엔진 프로젝트 → 모의 그림
     _, p = produced(app_client)
     card = p["result"]["cards"][0]
-    assert card["status"] == "image_ready"
+    assert card["status"] == "done"
     assert card["image"]["origin"] == "mock" and card["image"]["originalFormat"] == "png"
     assert not (app_client.tmp / "agy-calls.jsonl").exists()
 
@@ -241,7 +242,7 @@ def interrupt_after_two_cards(c, pid):
         project = repo.get_project(conn, pid)
         run = repo.last_run(conn, pid)
         result = project["data"]["result"]
-        cards = [{**card, "status": "image_ready" if i < 2 else ("generating_image" if i == 2 else "pending"),
+        cards = [{**card, "status": "done" if i < 2 else ("generating_image" if i == 2 else "pending"),
                   "image": card["image"] if i < 2 else None} for i, card in enumerate(result["cards"])]
         repo.save_project(conn, {**project, "data": {**project["data"], "result": {**result, "cards": cards}}})
         repo.update_run(conn, run["id"], status="running", dispatch=False)
@@ -253,7 +254,7 @@ def test_restart_marks_unfinished_cards_as_interrupted(app_client):
     pid, _ = produced(app_client)
     interrupt_after_two_cards(app_client, pid)
     cards = get(app_client, pid)["result"]["cards"]
-    assert [c["status"] for c in cards[:2]] == ["image_ready", "image_ready"]
+    assert [c["status"] for c in cards[:2]] == ["done", "done"]
     assert {c["status"] for c in cards[2:]} == {"failed"}  # "그림 만드는 중"으로 남지 않아요
     assert {c["error"]["code"] for c in cards[2:]} == {"INTERRUPTED"}
 
@@ -269,7 +270,7 @@ def test_continue_after_restart_makes_only_unfinished_cards(app_client):
     cards = {c["cardId"]: c for c in get(app_client, pid)["result"]["cards"]}
     total = len(cards)
     assert len(app_client.calls()) - calls_before == total - 2  # 끝나지 않은 카드만 다시 만들어요
-    assert all(c["status"] == "image_ready" for c in cards.values())
+    assert all(c["status"] == "done" for c in cards.values())
     for cid, image in before.items():
         assert cards[cid]["image"] == image  # 끝난 카드는 그대로예요
 
@@ -316,7 +317,7 @@ def test_failed_agy_card_is_drawn_as_svg_by_claude(app_client, monkeypatch):
     monkeypatch.setenv("FAKE_AGY_FAIL_ON", "카드 2/")
     pid, p = produced(app_client)
     cards = p["result"]["cards"]
-    assert {c["status"] for c in cards} == {"image_ready"}
+    assert {c["status"] for c in cards} == {"done"}
     card_2 = cards[1]["image"]
     assert card_2["origin"] == "generated-svg" and card_2["originalFormat"] == "svg"
     assert card_2["originalSize"] == [1080, 1350] and card_2["file"].endswith("card_2.v1.svg")
@@ -379,3 +380,106 @@ def test_both_failing_shows_both_reasons(app_client, monkeypatch):
     card_2 = p["result"]["cards"][1]
     assert card_2["status"] == "failed"
     assert "agy" in card_2["error"]["message"] and "Claude CLI" in card_2["error"]["message"]
+
+
+# --- 글자 올리기: 직접 조정·렌더 실패·예전 프로젝트 -------------------------------------
+
+
+def layout_req(c, pid, p, card_id, **layout):
+    return c.post(f"/api/projects/{pid}/cards/{card_id}/layout",
+                  json={"resultVersion": p["result"]["version"], "layout": layout, "requestId": rid()})
+
+
+def test_layout_change_rerenders_only_that_card_without_agy(app_client):
+    pid, p = produced(app_client)
+    before = {c["cardId"]: c for c in p["result"]["cards"]}
+    agy_calls = len(app_client.calls())
+    res = layout_req(app_client, pid, p, "card_2", textArea="bottom", scale=-1, title="새 제목")
+    assert res.status_code == 202, res.text
+    work()
+    p2 = get(app_client, pid)
+    cards = {c["cardId"]: c for c in p2["result"]["cards"]}
+    assert len(app_client.calls()) == agy_calls  # 그림은 다시 만들지 않아요
+    assert cards["card_2"]["cardVersion"] == 2 and cards["card_2"]["pngUrl"].endswith("card_2.v2.png")
+    assert cards["card_2"]["image"] == before["card_2"]["image"]
+    assert cards["card_2"]["layout"]["textArea"] == "bottom" and cards["card_2"]["layout"]["scale"] == -1
+    assert cards["card_2"]["layout"]["textEdited"] is True
+    for cid, card in before.items():
+        if cid != "card_2":
+            assert cards[cid]["png"] == card["png"] and cards[cid]["cardVersion"] == 1
+    assert p2["stage"] == "reviewing" and p2["lastRun"]["kind"] == "render"
+
+
+@pytest.mark.parametrize("layout", [{"body": "가" * 161}, {"textArea": "left"}, {"scale": 3}])
+def test_layout_input_is_validated(app_client, layout):
+    pid, p = produced(app_client)
+    assert layout_req(app_client, pid, p, "card_1", **layout).status_code == 422
+
+
+def test_render_failure_keeps_image_and_retry_only_rerenders(app_client, monkeypatch):
+    monkeypatch.setenv("FAKE_RENDER_FAIL_ON", "card_2")
+    pid, p = produced(app_client)
+    card_2 = p["result"]["cards"][1]
+    assert card_2["status"] == "failed" and card_2["error"]["code"] == "RENDER_FAILED"
+    assert card_2["image"] and p["stage"] == "producing"  # 한 장이라도 실패하면 검수로 넘어가지 않아요
+    monkeypatch.delenv("FAKE_RENDER_FAIL_ON")
+    agy_calls = len(app_client.calls())
+    res = app_client.post(f"/api/projects/{pid}/cards/card_2/retry",
+                          json={"resultVersion": p["result"]["version"], "requestId": rid()})
+    assert res.status_code == 202, res.text
+    work()
+    p2 = get(app_client, pid)
+    assert len(app_client.calls()) == agy_calls and p2["result"]["cards"][1]["status"] == "done"
+    assert p2["stage"] == "reviewing"
+
+
+def test_render_pending_for_projects_made_before_text_rendering(app_client):
+    from cardnews import db, repo
+
+    pid, p = produced(app_client)
+    with db.transaction() as conn:  # 글자 렌더링 전에 만든 프로젝트: 그림만 있고 png가 없어요
+        project = repo.get_project(conn, pid)
+        result = project["data"]["result"]
+        cards = [{k: v for k, v in {**c, "status": "image_ready"}.items() if k not in ("png", "checks", "layout")}
+                 for c in result["cards"]]
+        repo.save_project(conn, {**project, "stage": "producing",
+                                 "data": {**project["data"], "result": {**result, "cards": cards}}})
+    agy_calls = len(app_client.calls())
+    res = app_client.post(f"/api/projects/{pid}/render",
+                          json={"resultVersion": p["result"]["version"], "requestId": rid()})
+    assert res.status_code == 202, res.text
+    work()
+    p2 = get(app_client, pid)
+    assert len(app_client.calls()) == agy_calls
+    assert {c["status"] for c in p2["result"]["cards"]} == {"done"} and p2["stage"] == "reviewing"
+    assert p2["result"]["cards"][0]["layout"]["textArea"]  # 기본 배치를 채워 넣어요
+
+
+def test_blank_text_is_rejected(app_client):
+    pid, p = produced(app_client)
+    assert layout_req(app_client, pid, p, "card_1", title="   ").status_code == 422
+
+
+def test_continue_render_skips_cards_already_done(app_client):
+    from cardnews import db, repo, worker
+
+    pid, p = produced(app_client)
+    res = app_client.post(f"/api/projects/{pid}/cards/card_1/layout",
+                          json={"resultVersion": p["result"]["version"], "layout": {"textArea": "bottom"},
+                                "requestId": rid()})
+    assert res.status_code == 202
+    with db.transaction() as conn:  # 렌더 run을 두 장짜리로 바꾸고, 1장만 끝낸 채 서버가 꺼진 상황
+        run = repo.last_run(conn, pid)
+        repo.update_run(conn, run["id"], payload={**run["payload"], "cardIds": ["card_1", "card_2"]},
+                        status="running", dispatch=False)
+        project = repo.get_project(conn, pid)
+        result = project["data"]["result"]
+        cards = [{**c, "status": "rendering"} if c["cardId"] == "card_2" else c for c in result["cards"]]
+        repo.save_project(conn, {**project, "data": {**project["data"], "result": {**result, "cards": cards}}})
+    worker.recover_interrupted()
+    res = app_client.post(f"/api/runs/{run['id']}/resume", json={"mode": "continue", "requestId": rid()})
+    assert res.status_code == 202, res.text
+    work()
+    cards = {c["cardId"]: c for c in get(app_client, pid)["result"]["cards"]}
+    assert cards["card_1"]["cardVersion"] == 1  # 끝난 카드는 다시 올리지 않아요
+    assert cards["card_2"]["status"] == "done" and cards["card_2"]["cardVersion"] == 2

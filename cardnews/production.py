@@ -1,8 +1,9 @@
-"""스토리보드 승인 뒤 카드별 그림 만들기 (구현 4단계).
+"""스토리보드 승인 뒤 카드별 그림 만들기와 글자 올리기 (구현 4·5단계).
 
 카드는 한 장씩 차례로 만들고, 상태를 바로바로 저장해서 화면이 진행을 보여 줘요.
-  pending → generating_image → image_ready (글자 렌더링은 5단계에서 이어 붙여요)
-                              ↘ failed (그 카드에만 재시도 버튼)
+  pending → generating_image → rendering → done (점검 결과는 checks.layout에 따로)
+                             ↘ failed (그 카드에만 재시도 버튼)
+글자만 다시 올리는 run(render)은 그림을 그대로 쓰고 rendering부터 해요.
 한 장이 실패해도 나머지는 계속해요. 다만 로그인 필요·도구 없음처럼 모든 카드가 같은 이유로
 실패할 문제면 남은 카드는 부르지 않아요(할당량 낭비 방지).
 """
@@ -13,6 +14,7 @@ from cardnews import config, db, pipeline, repo
 from cardnews.engines.base import Cancelled, RunContext
 from cardnews.errors import AppError
 from cardnews.images import agy, claude_svg, mock
+from cardnews.render.runner import Renderer
 
 STOP_CODES = {"AUTH_REQUIRED", "TOOL_UNAVAILABLE"}
 
@@ -73,7 +75,7 @@ def _set_card(card_id: str, **fields):
     return change
 
 
-UNFINISHED = ("pending", "generating_image")
+UNFINISHED = ("pending", "generating_image", "rendering")
 
 
 def mark_unfinished(result: dict | None, error: dict) -> dict | None:
@@ -85,20 +87,30 @@ def mark_unfinished(result: dict | None, error: dict) -> dict | None:
     return {**result, "cards": cards}
 
 
+def default_layout(plan: dict) -> dict:
+    """글자 배치 기본값: 스토리보드가 비워 둔 자리, 나머지는 자동. 문구는 스토리보드 그대로(None)."""
+    return {"textArea": plan["imagePlan"].get("textArea") or "top", "scale": None, "scrim": "auto",
+            "color": "auto", "title": None, "keyLine": None, "body": None, "textEdited": False}
+
+
 def _fresh_result(storyboard: dict, version: int) -> dict:
-    cards = [{"cardId": c["id"], "cardVersion": 1, "status": "pending", "image": None,
-              "error": None} for c in storyboard["cards"]]
+    cards = [{"cardId": c["id"], "cardVersion": 1, "status": "pending", "image": None, "png": None,
+              "checks": None, "layout": default_layout(c), "error": None} for c in storyboard["cards"]]
     return {"version": version, "storyboardVersion": storyboard["version"], "cards": cards}
 
 
-def _start_result(storyboard: dict, target_ids: set[str], fresh: bool):
-    """처음 제작이면 새 결과를, 아니면 대상 카드만 새 버전으로 바꾼 결과를 만들어요. 나머지 카드는 그대로예요."""
+def _start_result(storyboard: dict, targets: dict[str, bool], fresh: bool):
+    """처음 제작이면 새 결과를, 아니면 대상 카드만 새 버전으로 바꾼 결과를 만들어요. 나머지 카드는 그대로예요.
+
+    targets = {카드 ID: 그림도 새로 그릴지}. 글자만 올리는 카드는 그림을 그대로 둬요.
+    """
     def change(result: dict | None) -> dict:
         version = (result or {}).get("version", 0) + 1
         if fresh or not result:
             return _fresh_result(storyboard, version)
-        cards = [{**c, "cardVersion": c["cardVersion"] + 1, "status": "pending", "image": None,
-                  "error": None} if c["cardId"] in target_ids else c for c in result["cards"]]
+        cards = [{**c, "cardVersion": c["cardVersion"] + 1, "status": "pending", "png": None, "checks": None,
+                  "error": None, **({"image": None} if targets[c["cardId"]] else {})}
+                 if c["cardId"] in targets else c for c in result["cards"]]
         return {**result, "version": version, "cards": cards}
     return change
 
@@ -106,26 +118,54 @@ def _start_result(storyboard: dict, target_ids: set[str], fresh: bool):
 # --- 실행 ----------------------------------------------------------------------------
 
 
-def _targets(run: dict, storyboard: dict, result: dict | None) -> tuple[list[dict], bool]:
-    """(만들 카드, 결과를 새로 시작할지). "이어서 하기"는 끝나지 않은 카드만 만들어요."""
+def _targets(run: dict, storyboard: dict, result: dict | None) -> tuple[list[tuple[dict, bool]], bool]:
+    """([(카드, 그림도 그릴지)], 결과를 새로 시작할지).
+
+    "이어서 하기"는 끝나지 않은 카드만, 그림이 이미 있으면 글자만 올려요.
+    """
+    entries = {c["cardId"]: c for c in (result or {}).get("cards", [])}
+    has_image = lambda card: bool(entries.get(card["id"], {}).get("image"))  # noqa: E731
     if run["kind"] == "image_retry":
-        return [c for c in storyboard["cards"] if c["id"] == run["payload"]["cardId"]], False
+        return [(c, True) for c in storyboard["cards"] if c["id"] == run["payload"]["cardId"]], False
+    if run["kind"] == "render":
+        ids = set(run["payload"]["cardIds"])
+        if run["payload"].get("onlyUnfinished"):  # 이어하기는 이미 끝난 카드를 다시 올리지 않아요
+            ids = {i for i in ids if entries.get(i, {}).get("status") != "done"}
+        return [(c, False) for c in storyboard["cards"] if c["id"] in ids], False
     if run["payload"].get("onlyUnfinished") and result:
-        done = {c["cardId"] for c in result["cards"] if c["status"] == "image_ready"}
-        return [c for c in storyboard["cards"] if c["id"] not in done], False
-    return storyboard["cards"], True
+        return [(c, not has_image(c)) for c in storyboard["cards"]
+                if entries.get(c["id"], {}).get("status") != "done"], False
+    return [(c, True) for c in storyboard["cards"]], True
 
 
-def _make_one(ctx: RunContext, tools: dict, card: dict, total: int, result: dict) -> None:
-    version = next(c["cardVersion"] for c in result["cards"] if c["cardId"] == card["id"])
+def _texts(card: dict, layout: dict) -> dict:
+    return {k: layout.get(k) if layout.get(k) is not None else card.get(k) for k in ("title", "keyLine", "body")}
+
+
+def _make_one(ctx: RunContext, tools: dict, renderer: Renderer, card: dict, total: int, draw: bool) -> None:
+    with db.transaction() as conn:
+        entry = next(c for c in repo.get_project(conn, ctx.project_id)["data"]["result"]["cards"]
+                     if c["cardId"] == card["id"])
     project_dir = config.data_dir() / "projects" / ctx.project_id
-    stem = project_dir / "results" / "images" / f"{card['id']}.v{version}"
-    _update(ctx.run_id, _set_card(card["id"], status="generating_image"))
-    ctx.report(f"그림 만드는 중: {card['order']}/{total} {card['title'][:30]}")
-    record = _draw(ctx, tools, card["imagePlan"], card["order"], total, stem)
-    dest: Path = record.pop("dest")
-    image = {**record, "file": dest.relative_to(project_dir).as_posix()}
-    _update(ctx.run_id, _set_card(card["id"], status="image_ready", image=image))
+    image = entry["image"]
+    if draw:
+        stem = project_dir / "results" / "images" / f"{card['id']}.v{entry['cardVersion']}"
+        _update(ctx.run_id, _set_card(card["id"], status="generating_image"))
+        ctx.report(f"그림 만드는 중: {card['order']}/{total} {card['title'][:30]}")
+        record = _draw(ctx, tools, card["imagePlan"], card["order"], total, stem)
+        dest: Path = record.pop("dest")
+        image = {**record, "file": dest.relative_to(project_dir).as_posix()}
+    _update(ctx.run_id, _set_card(card["id"], status="rendering", image=image))
+    ctx.report(f"글자 올리는 중: {card['order']}/{total} {card['title'][:30]}")
+    layout = entry.get("layout") or default_layout(card)
+    out = renderer.render(
+        out_stem=project_dir / "results" / "cards" / f"{card['id']}.v{entry['cardVersion']}",
+        texts=_texts(card, layout), role=card["role"], layout=layout,
+        bg=project_dir / image["file"] if image else None,
+        disclose=bool(image) and str(image.get("origin", "")).startswith("generated"))
+    _update(ctx.run_id, _set_card(
+        card["id"], status="done", layout=layout, png=out["png"].relative_to(project_dir).as_posix(),
+        checks={"layout": out["checks"]}, render={"applied": out["applied"], "autoFixes": out["autoFixes"]}))
 
 
 def _fail(card_ids: list[str], err: AppError):
@@ -136,22 +176,33 @@ def _fail(card_ids: list[str], err: AppError):
     return change
 
 
+def _run_cards(ctx: RunContext, targets: list[tuple[dict, bool]], tools: dict, total: int) -> None:
+    renderer = Renderer()
+    try:
+        for i, (card, draw) in enumerate(targets):
+            try:
+                _make_one(ctx, tools, renderer, card, total, draw)
+            except AppError as err:
+                stop = err.code in STOP_CODES
+                ids = [c["id"] for c, _ in targets[i:]] if stop else [card["id"]]
+                _update(ctx.run_id, _fail(ids, err))
+                ctx.report(f"카드 실패: {card['order']}/{total} — {err.message}")
+                if stop:
+                    break
+    finally:
+        renderer.close()
+
+
 def execute(run: dict, project: dict, ctx: RunContext) -> None:
     storyboard = project["data"]["storyboard"]
     targets, fresh = _targets(run, storyboard, project["data"]["result"])
-    result = _update(run["id"], _start_result(storyboard, {c["id"] for c in targets}, fresh))
-    tools = _tools(project)
-    total = len(storyboard["cards"])
-    for i, card in enumerate(targets):
-        try:
-            _make_one(ctx, tools, card, total, result)
-        except AppError as err:
-            stop = err.code in STOP_CODES
-            ids = [c["id"] for c in targets[i:]] if stop else [card["id"]]
-            _update(run["id"], _fail(ids, err))
-            ctx.report(f"그림 실패: {card['order']}/{total} — {err.message}")
-            if stop:
-                break
+    _update(run["id"], _start_result(storyboard, {c["id"]: draw for c, draw in targets}, fresh))
+    tools = _tools(project) if any(draw for _, draw in targets) else {}
+    _run_cards(ctx, targets, tools, len(storyboard["cards"]))
     with db.transaction() as conn:
-        if not repo.get_run(conn, run["id"])["cancelRequested"]:
-            pipeline.finish_run(conn, run["id"], "succeeded")
+        if repo.get_run(conn, run["id"])["cancelRequested"]:
+            return
+        pipeline.finish_run(conn, run["id"], "succeeded")
+        current = repo.get_project(conn, project["id"])
+        if all(c["status"] == "done" for c in current["data"]["result"]["cards"]):
+            repo.save_project(conn, {**current, "stage": "reviewing"})  # 6장 모두 글자까지 올렸으면 검수로
