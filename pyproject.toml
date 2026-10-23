@@ -1,0 +1,28 @@
+[project]
+name = "cardnews"
+version = "0.1.0"
+description = "사용자와 함께 만드는 카드뉴스 에이전트"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+cardnews = "cardnews.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cardnews"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

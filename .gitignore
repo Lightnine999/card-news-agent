@@ -1,0 +1,18 @@
+# 실행 데이터(조사 기록·생성 이미지·엔진 로그)는 커밋하지 않아요 (DECISIONS.md D5)
+data/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.omc/
+
+# 이 컴퓨터에서만 쓰는 미리보기 설정 (사용자 경로·세션 ID 포함)
+.claude/launch.json
+
+# 강의 키트 원본 — 공개 저장소 게시 여부 확인 전 (PRD.md만 제출 자료로 올려요)
+/7.*.html
+/ACCEPTANCE.md
+/ENGINE_GUIDE.md
+/EXAMPLE_RUN.md
+/REFERENCES.md
+/assets/

@@ -1,0 +1,456 @@
+{
+  "id": "prj_137e35bf7e7b",
+  "version": 7,
+  "topic": "AI 최신소식",
+  "stage": "storyboard_review",
+  "isMock": false,
+  "engine": {
+    "name": "claude-cli",
+    "sessionId": "(제외)"
+  },
+  "research": {
+    "requestedAt": "2026-10-23T14:20:04+09:00",
+    "period": {
+      "days": 7,
+      "from": "2026-10-16T14:20:04+09:00",
+      "to": "2026-10-23T14:20:04+09:00"
+    },
+    "candidates": [
+      {
+        "id": "cand_1",
+        "title": "Anthropic, Agent Skills 표준을 Agentic AI Foundation에 기증",
+        "summary": "Anthropic이 에이전트에게 작업 방법을 알려주는 오픈 표준 Agent Skills를 Linux Foundation 산하 Agentic AI Foundation(AAIF)에 기증했어요. 이름·로고·GitHub 조직·agentskills.io 도메인도 함께 넘기며, 앞으로 버전 릴리스와 제안 절차, 보안 지침을 마련할 계획이라고 밝혔어요.",
+        "category": "개발 도구·표준",
+        "publishedAt": "2026-10-22",
+        "eventDate": "2026-10-22",
+        "sources": [
+          {
+            "url": "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation",
+            "name": "Anthropic 뉴스룸",
+            "type": "official",
+            "opened": true
+          }
+        ],
+        "whyPick": "에이전트 생태계 표준의 운영 주체가 특정 회사에서 중립 재단으로 옮겨가는 소식이에요.",
+        "uncertainty": "70개 이상 플랫폼 통합, 스킬 약 100만 개 게시, 설치 약 2억 8천만 건은 Anthropic이 밝힌 수치이고 독립 검증은 못 했어요. 앞으로의 계획은 아직 실행 전이에요.",
+        "status": "released",
+        "dateStatus": "confirmed"
+      },
+      {
+        "id": "cand_2",
+        "title": "Anthropic, 선제형 에이전트 'Claude Duet' 연구 프리뷰 공개",
+        "summary": "Anthropic이 Opus 5.5 기반의 선제형 에이전트 Claude Duet를 연구 프리뷰로 내놨어요. 미국 Pro·Max 구독자 대상 대기자 명단 방식이고, 아침 요약과 작업 요청을 지원하며 결제·메시지 전송 같은 민감한 작업은 승인을 받는다고 해요.",
+        "category": "제품",
+        "publishedAt": "2026-10-21",
+        "eventDate": "2026-10-21",
+        "sources": [
+          {
+            "url": "https://claude.com/product/claude-duet",
+            "name": "Claude 제품 페이지",
+            "type": "official",
+            "opened": false
+          },
+          {
+            "url": "https://www.reuters.com/technology/anthropic-unveils-claude-duet-ai-agent-app-2026-10-21/",
+            "name": "Reuters",
+            "type": "press",
+            "opened": false
+          },
+          {
+            "url": "https://siliconangle.com/2026/10/22/anthropic-introduces-claude-duet-a-proactive-ai-agent-for-professionals/",
+            "name": "SiliconANGLE",
+            "type": "press",
+            "opened": false
+          },
+          {
+            "url": "https://aiweekly.co/alerts/anthropic-opens-claude-duet-an-opus-55-agent-to-us-pro-and-max",
+            "name": "AI Weekly",
+            "type": "blog",
+            "opened": true
+          }
+        ],
+        "whyPick": "사용자가 시키기 전에 먼저 움직이는 에이전트라는 점에서 소비자용 에이전트 경쟁을 보여주는 소식이에요.",
+        "uncertainty": "제품 페이지와 언론 링크는 AI Weekly 정리글에 적힌 주소이고, 제가 원문을 직접 열어보지는 못했어요. 대기자 명단 단계라 일반 출시는 아니고, 6,000개 이상 커넥터 등은 제품 페이지 설명이에요.",
+        "status": "announced",
+        "dateStatus": "confirmed"
+      },
+      {
+        "id": "cand_3",
+        "title": "Anthropic, 지분 5%를 공익 펀드(Public Benefit Fund)에 배정",
+        "summary": "Anthropic이 회사 지분 5%를 신설 공익 펀드에 배정하겠다고 밝혔어요. 주주 승인이 전제이고, 기업가치가 오르면 이사회가 지분을 더 얹을 수 있어요. 펀드는 로비·정치 후원에는 쓰지 못하는 완전 자회사 LLC 구조예요.",
+        "category": "기업·정책",
+        "publishedAt": "2026-10-18",
+        "eventDate": "2026-10-18",
+        "sources": [
+          {
+            "url": "https://www.anthropic.com/news/public-benefit-fund",
+            "name": "Anthropic 뉴스룸",
+            "type": "official",
+            "opened": true
+          }
+        ],
+        "whyPick": "AI 기업이 자사 지분을 공익 목적으로 떼어놓는 구조를 직접 밝힌 사례예요.",
+        "uncertainty": "주주 승인 전 계획이고, 거버넌스와 가치 기준은 '앞으로 몇 달 안에' 공개한다고만 했어요. 약 20%라는 합산 수치는 공동창업자 서약과 직원 매칭을 포함한 회사 설명이에요.",
+        "status": "announced",
+        "dateStatus": "confirmed"
+      },
+      {
+        "id": "cand_4",
+        "title": "OpenAI, 신약 개발 에이전트 스타트업 Orchestra Bio 인수",
+        "summary": "OpenAI가 신약 개발 프로그램의 일정·지연 위험을 에이전트로 관리하는 Orchestra Bio를 인수하고, 팀과 플랫폼을 생명과학 제품군 Rosalind에 합친다고 해요. 인수 조건은 공개되지 않았어요.",
+        "category": "기업·인수",
+        "publishedAt": "2026-10-20",
+        "eventDate": "2026-10-20",
+        "sources": [
+          {
+            "url": "https://decrypt.co/381467/openai-buys-orchestra-bio-ai-agents-drug-development",
+            "name": "Decrypt",
+            "type": "press",
+            "opened": false
+          },
+          {
+            "url": "https://unite.ai/openai-acquires-orchestra-bio-to-expand-rosalind-life-sciences-tools",
+            "name": "Unite.AI",
+            "type": "press",
+            "opened": false
+          },
+          {
+            "url": "https://aiweekly.co/alerts/openai-buys-orchestra-bio-folds-drug-dev-agents-into-rosalind",
+            "name": "AI Weekly",
+            "type": "blog",
+            "opened": false
+          }
+        ],
+        "whyPick": "AI 연구소가 신약 개발 업무 흐름 자체를 사들이는 흐름을 보여줘요.",
+        "uncertainty": "공식 발표 미확인. OpenAI 뉴스룸 페이지는 접근이 막혀 직접 열지 못했어요. 스타트업의 투자 유치 규모와 투자자 정보는 매체마다 달라요.",
+        "status": "announced",
+        "dateStatus": "confirmed"
+      },
+      {
+        "id": "cand_5",
+        "title": "Recursive, 로컬용 오픈 웨이트 코딩 모델 'Flint' 공개",
+        "summary": "Recursive의 첫 모델 Flint가 Apache 2.0 라이선스의 오픈 웨이트 코딩 모델로 10월 21일 공개됐어요. Ollama 목록에는 총 약 398억, 토큰당 활성 약 25억 파라미터 MoE로 적혀 있고, 회사는 SWE-bench Pro v2 89.7% 등을 보고했어요.",
+        "category": "모델",
+        "publishedAt": "2026-10-21",
+        "eventDate": "2026-10-21",
+        "sources": [
+          {
+            "url": "https://runtimewire.com/article/recursive-flint-local-coding-model-eureka-machine",
+            "name": "RuntimeWire",
+            "type": "press",
+            "opened": true
+          },
+          {
+            "url": "https://aiweekly.co/alerts/recursive-opens-flint-a-40b25b-moe-coder-hitting-897-on-swe-bench-pro-v2-under",
+            "name": "AI Weekly",
+            "type": "blog",
+            "opened": false
+          },
+          {
+            "url": "https://ollama.com/library/flint",
+            "name": "Ollama 라이브러리",
+            "type": "unknown",
+            "opened": false
+          }
+        ],
+        "whyPick": "로컬에서 돌리는 것을 목표로 한 오픈 코딩 모델이라 개발자 관심이 클 소식이에요.",
+        "uncertainty": "공식 발표 미확인. 벤치마크 수치는 모두 회사가 직접 밝힌 값이고 독립 검증이 없어요. 'SWE-bench Pro v2'가 어떤 버전인지 확인하지 못해 기존 순위와 직접 비교하기 어려워요. RuntimeWire 기사에는 파라미터 수가 없어요.",
+        "status": "claimed",
+        "dateStatus": "confirmed"
+      },
+      {
+        "id": "cand_6",
+        "title": "엔비디아, GTC 베를린에서 컨테이너형 'DSX POD' 소개",
+        "summary": "독일 매체 보도로는 엔비디아가 10월 21일 GTC 베를린에서 AI 데이터센터 구축 기간을 몇 달에서 며칠로 줄이는 모듈형 Vera Rubin 포드를 소개했다고 해요. 모음 사이트는 공급사 6곳 지명 소식도 함께 전했어요.",
+        "category": "인프라·반도체",
+        "publishedAt": "2026-10-21",
+        "eventDate": "2026-10-21",
+        "sources": [
+          {
+            "url": "https://goldesel.de/artikel/nvidia-gtc-berlin-jensen-huang-rechenzentren",
+            "name": "Goldesel.de",
+            "type": "press",
+            "opened": false
+          },
+          {
+            "url": "https://aiweekly.co/alerts/nvidia-launches-dsx-pod-containerized-vera-rubin-ai-factory-that-cuts",
+            "name": "AI Weekly",
+            "type": "blog",
+            "opened": false
+          }
+        ],
+        "whyPick": "AI 인프라 구축 속도를 겨냥한 하드웨어 발표라 인프라 쪽 소식으로 균형을 맞춰줘요.",
+        "uncertainty": "공식 발표 미확인. 영어권 보도와 엔비디아 공식 자료를 찾지 못했고, 제품명 표기(DSX/DSK)와 세부 사양은 단일 매체에 의존해요. 출시 시기와 가격도 미확인이에요.",
+        "status": "announced",
+        "dateStatus": "confirmed"
+      },
+      {
+        "id": "cand_7",
+        "title": "월마트, AI 쇼핑 에이전트용 MCP 서버 'Agent Gateway' 공개",
+        "summary": "모음 사이트에 따르면 월마트가 승인된 AI 쇼핑 에이전트를 위한 MCP 서버 Agent Gateway와, 지출 한도를 둘 수 있는 Agent Profiles를 내놨다고 해요. 원출처는 TechCrunch로 표시돼 있어요.",
+        "category": "제품·커머스",
+        "publishedAt": "2026-10-22",
+        "eventDate": null,
+        "sources": [
+          {
+            "url": "https://aiweekly.co/alerts/walmart-debuts-agent-gateway-mcp-server-and-agent-profiles-for-approved-ai",
+            "name": "AI Weekly",
+            "type": "blog",
+            "opened": false
+          }
+        ],
+        "whyPick": "대형 유통사가 외부 AI 에이전트의 구매 통로를 공식 인터페이스로 여는 사례예요.",
+        "uncertainty": "공식 발표·언론 보도 미확인. TechCrunch 원문과 월마트 발표를 검색으로 찾지 못했어요. 출시 범위와 일정도 미확인이에요.",
+        "status": "unknown",
+        "dateStatus": "published_only"
+      }
+    ]
+  },
+  "selection": {
+    "candidateIds": [
+      "cand_1",
+      "cand_3"
+    ],
+    "savedAt": "2026-10-23T14:21:25+09:00"
+  },
+  "researchNotes": [
+    {
+      "candidateId": "cand_1",
+      "facts": [
+        {
+          "text": "2026-10-22 Anthropic이 Agent Skills 오픈 표준을 Linux Foundation 산하 Agentic AI Foundation(AAIF)에 기증한다고 밝혔어요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+          ]
+        },
+        {
+          "text": "표준 자체뿐 아니라 Agent Skills 이름·로고, GitHub 조직, agentskills.io 도메인도 함께 넘겨요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+          ]
+        },
+        {
+          "text": "Anthropic에 따르면 70개 넘는 에이전트 플랫폼(ChatGPT, Cursor, GitHub Copilot, VS Code 등)이 통합했고, 스킬 약 100만 개가 게시, 설치는 약 2억 8천만 건이에요. 표준은 2025년 12월에 공개됐어요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+          ]
+        },
+        {
+          "text": "Anthropic·Google·OpenAI 등의 엔지니어가 개인 자격으로 표준을 유지하고, David Soria Parra와 Mahesh Murag가 리드 메인테이너예요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+          ]
+        },
+        {
+          "text": "AAIF는 Anthropic이 Block, OpenAI와 2025년에 공동 설립했고, Anthropic은 MCP도 이미 기증했어요. AAIF에 가입하지 않아도 표준을 쓰거나 기여할 수 있어요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+          ]
+        },
+        {
+          "text": "앞으로 제안하는 계획은 버전 릴리스, 공식 제안 절차, 스킬 작성·설치자를 위한 보안 지침이에요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+          ]
+        }
+      ],
+      "limits": [
+        "채택·게시·설치 수치는 Anthropic이 밝힌 값이고 독립 검증은 못 했어요.",
+        "다음 단계는 계획 단계라 일정이 적혀 있지 않아요."
+      ],
+      "conflicts": [],
+      "primarySources": [
+        "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+      ],
+      "unreachable": []
+    },
+    {
+      "candidateId": "cand_3",
+      "facts": [
+        {
+          "text": "2026-10-18 Anthropic이 회사 지분 5%를 새 Anthropic Public Benefit Fund에 배정하겠다고 밝혔어요. 주주 승인이 전제예요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/public-benefit-fund"
+          ]
+        },
+        {
+          "text": "기준선 대비 회사 가치가 50% 오를 때마다 이사회 재량으로 2%가 더해질 수 있어요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/public-benefit-fund"
+          ]
+        },
+        {
+          "text": "펀드는 완전 자회사 LLC이고, 보유 지분은 미국 안팎의 로비·정치 후원에 쓸 수 없어요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/public-benefit-fund"
+          ]
+        },
+        {
+          "text": "공동창업자 지분 기부 서약(80%)과 직원 지분 매칭을 합치면 약 20%가 공익에 쓰일 예정이고, 직원 약 절반이 매칭에 참여해요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/public-benefit-fund"
+          ]
+        },
+        {
+          "text": "AI로 인한 노동시장 영향 대응에 이미 2억 달러를 약속했고, 펀드가 더 과감한 방식을 쓸 수 있다고 해요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/public-benefit-fund"
+          ]
+        },
+        {
+          "text": "펀드 구조·거버넌스와 가치 기준은 앞으로 몇 달 안에, 공익 보고서와 함께 공개하겠다고 했어요.",
+          "sourceUrls": [
+            "https://www.anthropic.com/news/public-benefit-fund"
+          ]
+        }
+      ],
+      "limits": [
+        "주주 승인 전 계획이에요.",
+        "가치 기준선과 거버넌스 세부 내용은 미공개예요.",
+        "약 20%는 회사가 합산해 설명한 수치예요. 독립 검증은 못 했어요."
+      ],
+      "conflicts": [],
+      "primarySources": [
+        "https://www.anthropic.com/news/public-benefit-fund"
+      ],
+      "unreachable": []
+    }
+  ],
+  "editorial": {
+    "audience": "AI 소식을 가볍게 따라가는 일반 독자와 AI 도구를 쓰는 직장인·개발자 입문자",
+    "whyUseful": "같은 회사가 같은 주에 낸 두 발표를 묶어, AI 업계가 기술 표준과 회사 지분을 어떻게 '내려놓는지'를 한눈에 보여줘요. 둘 다 1차 자료로 확인했고, 계획 단계인 부분도 구분해 전해요.",
+    "format": "6장 카드뉴스: 표지 → 스킬 기증 2장 → 공익 펀드 2장 → 요약",
+    "hooks": [
+      "AI 에이전트 표준, 한 회사 손을 떠나요",
+      "스킬 설치 약 2억 8천만 건 — Anthropic이 밝힌 수치",
+      "지분 5%를 공익에 — 주주 승인 전 계획이에요"
+    ],
+    "decidedBy": "ai_recommendation"
+  },
+  "storyboard": {
+    "version": 1,
+    "cards": [
+      {
+        "id": "card_1",
+        "order": 1,
+        "role": "cover",
+        "title": "Anthropic, 이번 주 '내려놓기' 두 가지",
+        "keyLine": "에이전트 표준은 재단으로, 지분 일부는 공익 펀드로 보내겠다고 밝혔어요.",
+        "sourceUrls": [
+          "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation",
+          "https://www.anthropic.com/news/public-benefit-fund"
+        ],
+        "imagePlan": {
+          "kind": "generated",
+          "prompt": "두 개의 손이 각각 작은 블록과 둥근 씨앗을 넓은 공유 테이블 위로 내려놓는 추상적 일러스트. 차분한 남색과 따뜻한 베이지 톤, 단순한 도형. 글자와 로고는 넣지 않음. 위쪽 40%는 글자를 올릴 빈 공간.",
+          "textArea": "top"
+        }
+      },
+      {
+        "id": "card_2",
+        "order": 2,
+        "role": "body",
+        "title": "Agent Skills를 재단에 기증",
+        "keyLine": "10월 22일, Agent Skills 표준을 Linux Foundation 산하 AAIF에 넘긴다고 밝혔어요.",
+        "sourceUrls": [
+          "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+        ],
+        "imagePlan": {
+          "kind": "generated",
+          "prompt": "폴더 모양 상자들이 하나의 큰 공용 선반으로 옮겨지는 추상 일러스트. 연한 파랑과 회색 톤, 평면 도형 스타일. 글자·로고 없음. 아래쪽 35%는 글자 공간.",
+          "textArea": "bottom"
+        }
+      },
+      {
+        "id": "card_3",
+        "order": 3,
+        "role": "body",
+        "title": "이름·로고·도메인까지 함께",
+        "keyLine": "표준뿐 아니라 이름, 로고, GitHub 조직, agentskills.io 도메인도 넘겨요.",
+        "sourceUrls": [
+          "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+        ],
+        "imagePlan": {
+          "kind": "generated",
+          "prompt": "열쇠 꾸러미가 열린 상자 안으로 건네지는 단순한 평면 일러스트. 민트와 연회색 톤. 글자·로고 없음. 중앙에 글자를 올릴 넓은 빈 공간.",
+          "textArea": "center"
+        }
+      },
+      {
+        "id": "card_4",
+        "order": 4,
+        "role": "body",
+        "title": "Anthropic이 밝힌 채택 수치",
+        "keyLine": "70개 넘는 플랫폼 통합, 스킬 약 100만 개 게시, 설치 약 2억 8천만 건이에요(회사 발표).",
+        "sourceUrls": [
+          "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+        ],
+        "imagePlan": {
+          "kind": "generated",
+          "prompt": "점점 커지는 점들이 네트워크처럼 퍼지는 추상 패턴. 청록과 짙은 남색 배경. 글자·숫자·로고 없음. 위쪽에 글자를 올릴 빈 공간.",
+          "textArea": "top"
+        }
+      },
+      {
+        "id": "card_5",
+        "order": 5,
+        "role": "body",
+        "title": "지분 5%를 공익 펀드에",
+        "keyLine": "10월 18일, 주주 승인을 전제로 지분 5%를 새 공익 펀드에 배정한다고 밝혔어요.",
+        "sourceUrls": [
+          "https://www.anthropic.com/news/public-benefit-fund"
+        ],
+        "imagePlan": {
+          "kind": "generated",
+          "prompt": "원형 파이가 한 조각 떨어져 작은 새싹 화분으로 이어지는 부드러운 평면 일러스트. 연두와 크림 톤. 글자·숫자·로고 없음. 아래쪽 40%는 글자 공간.",
+          "textArea": "bottom"
+        }
+      },
+      {
+        "id": "card_6",
+        "order": 6,
+        "role": "summary",
+        "title": "다만 아직 계획 단계",
+        "keyLine": "펀드는 주주 승인 전이고, 구조와 기준은 앞으로 몇 달 안에 공개한다고 했어요. 로비·정치 후원에는 쓸 수 없어요.",
+        "sourceUrls": [
+          "https://www.anthropic.com/news/public-benefit-fund",
+          "https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+        ],
+        "imagePlan": {
+          "kind": "generated",
+          "prompt": "안개 낀 길 위에 이정표만 보이는 차분한 풍경 일러스트. 회청색과 연한 노랑 톤. 글자·로고 없음. 중앙에 글자를 올릴 빈 공간.",
+          "textArea": "center"
+        }
+      }
+    ],
+    "approvedAt": null
+  },
+  "result": null,
+  "currentQuestion": null,
+  "answers": [],
+  "activeRun": null,
+  "lastRun": {
+    "id": "run_10127c0b8f90",
+    "projectId": "prj_137e35bf7e7b",
+    "kind": "deep_research",
+    "status": "succeeded",
+    "progress": [
+      {
+        "at": "2026-10-23T14:21:28+09:00",
+        "message": "원문 확인: https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation"
+      },
+      {
+        "at": "2026-10-23T14:21:29+09:00",
+        "message": "원문 확인: https://www.anthropic.com/news/public-benefit-fund"
+      }
+    ],
+    "questionId": null,
+    "error": null,
+    "startedAt": "2026-10-23T14:21:25+09:00",
+    "finishedAt": "2026-10-23T14:21:59+09:00",
+    "resumedFrom": null
+  },
+  "finalApproval": null,
+  "exportsReady": false,
+  "createdAt": "2026-10-23T14:20:04+09:00"
+}
