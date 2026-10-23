@@ -10,7 +10,7 @@
 
 from pathlib import Path
 
-from cardnews import config, db, pipeline, repo
+from cardnews import config, db, pipeline, repo, revise
 from cardnews.engines.base import Cancelled, RunContext
 from cardnews.errors import AppError
 from cardnews.images import agy, claude_svg, mock
@@ -127,11 +127,12 @@ def _targets(run: dict, storyboard: dict, result: dict | None) -> tuple[list[tup
     has_image = lambda card: bool(entries.get(card["id"], {}).get("image"))  # noqa: E731
     if run["kind"] == "image_retry":
         return [(c, True) for c in storyboard["cards"] if c["id"] == run["payload"]["cardId"]], False
-    if run["kind"] == "render":
+    if run["kind"] in ("render", "revision"):
         ids = set(run["payload"]["cardIds"])
         if run["payload"].get("onlyUnfinished"):  # 이어하기는 이미 끝난 카드를 다시 올리지 않아요
             ids = {i for i in ids if entries.get(i, {}).get("status") != "done"}
-        return [(c, False) for c in storyboard["cards"] if c["id"] in ids], False
+        redraw = set(run["payload"].get("redraw", []))  # 부분 수정에서 그림도 다시 만들 카드
+        return [(c, c["id"] in redraw) for c in storyboard["cards"] if c["id"] in ids], False
     if run["payload"].get("onlyUnfinished") and result:
         return [(c, not has_image(c)) for c in storyboard["cards"]
                 if entries.get(c["id"], {}).get("status") != "done"], False
@@ -152,7 +153,8 @@ def _make_one(ctx: RunContext, tools: dict, renderer: Renderer, card: dict, tota
         stem = project_dir / "results" / "images" / f"{card['id']}.v{entry['cardVersion']}"
         _update(ctx.run_id, _set_card(card["id"], status="generating_image"))
         ctx.report(f"그림 만드는 중: {card['order']}/{total} {card['title'][:30]}")
-        record = _draw(ctx, tools, card["imagePlan"], card["order"], total, stem)
+        plan = {**card["imagePlan"], "prompt": entry.get("imagePrompt") or card["imagePlan"]["prompt"]}
+        record = _draw(ctx, tools, plan, card["order"], total, stem)
         dest: Path = record.pop("dest")
         image = {**record, "file": dest.relative_to(project_dir).as_posix()}
     _update(ctx.run_id, _set_card(card["id"], status="rendering", image=image))
@@ -193,10 +195,48 @@ def _run_cards(ctx: RunContext, targets: list[tuple[dict, bool]], tools: dict, t
         renderer.close()
 
 
+def _plan_revision(run: dict, project: dict, ctx: RunContext) -> dict:
+    """고칠 문구를 받아 run에 저장해요. 이어하기 때는 저장한 문구를 다시 써요(엔진을 또 부르지 않아요)."""
+    payload = run["payload"]
+    edits = payload.get("edits") or revise.revise(ctx, project, payload["cardIds"], payload["instruction"])
+    scope = payload.get("imageScope", "auto")
+    redraw = [cid for cid, e in edits.items()
+              if scope == "image" or (scope == "auto" and e["redrawImage"])]
+    payload = {**payload, "edits": edits, "redraw": redraw}
+    with db.transaction() as conn:
+        repo.update_run(conn, run["id"], payload=payload)
+    return {**run, "payload": payload}
+
+
+def _apply_edits(storyboard: dict, edits: dict, redraw: list[str]):
+    """고친 문구를 카드 배치(layout)에 넣어요. 그림을 다시 만들 카드에는 새 그림 요청을 남겨요."""
+    plans = {c["id"]: c for c in storyboard["cards"]}
+
+    def change(result: dict) -> dict:
+        cards = []
+        for c in result["cards"]:
+            edit = edits.get(c["cardId"])
+            if edit is None:
+                cards.append(c)
+                continue
+            layout = c.get("layout") or default_layout(plans[c["cardId"]])
+            now = _texts(plans[c["cardId"]], layout)
+            texts = {k: edit[k] for k in revise.TEXT_FIELDS if edit.get(k) and edit[k] != now.get(k)}
+            extra = {"imagePrompt": edit["imagePrompt"]} if c["cardId"] in redraw and edit.get("imagePrompt") else {}
+            cards.append({**c, **extra, "revisionNote": edit["note"],
+                          "layout": {**layout, **texts, "textEdited": bool(texts) or layout.get("textEdited", False)}})
+        return {**result, "cards": cards}
+    return change
+
+
 def execute(run: dict, project: dict, ctx: RunContext) -> None:
     storyboard = project["data"]["storyboard"]
+    if run["kind"] == "revision":
+        run = _plan_revision(run, project, ctx)
     targets, fresh = _targets(run, storyboard, project["data"]["result"])
     _update(run["id"], _start_result(storyboard, {c["id"]: draw for c, draw in targets}, fresh))
+    if run["kind"] == "revision":
+        _update(run["id"], _apply_edits(storyboard, run["payload"]["edits"], run["payload"]["redraw"]))
     tools = _tools(project) if any(draw for _, draw in targets) else {}
     _run_cards(ctx, targets, tools, len(storyboard["cards"]))
     with db.transaction() as conn:

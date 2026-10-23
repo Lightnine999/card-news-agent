@@ -12,7 +12,7 @@ const TEXT_AREA_LABEL = { top: '위쪽', bottom: '아래쪽', center: '가운데
 const ROLE_LABEL = { cover: '표지', body: '본문', summary: '요약', next_action: '다음 행동' };
 const KIND_LABEL = {
   research: '넓은 조사', deep_research: '심층 조사', storyboard: '스토리보드 수정', production: '제작',
-  image_retry: '카드 다시 만들기', render: '글자 올리기',
+  image_retry: '카드 다시 만들기', render: '글자 올리기', revision: '카드 고치기', export: '내보내기',
 };
 const MAX_SELECTION = 3;
 
@@ -115,7 +115,7 @@ export function errorView(p, ui) {
   if (!['failed', 'interrupted'].includes(run.status) || !run.error) return '';
   const seen = new Set();
   // 그림 작업은 남은 카드만 이어서 만들 수 있어요. 엔진 작업은 엔진 세션이 있어야 이어갈 수 있어요.
-  const images = ['production', 'image_retry', 'render'].includes(run.kind);
+  const images = ['production', 'image_retry', 'render', 'revision'].includes(run.kind);
   const usable = run.error.nextActions.filter((a) => a !== 'continue' || images || p.engine.sessionId);
   const labelFor = (mode, label) => (images && mode === 'continue' ? '남은 카드만 이어서 만들기'
     : images && mode === 'restart' ? '모든 카드 처음부터' : label);
@@ -447,6 +447,76 @@ function cardDetail(card, plan, version, ui) {
     </section>`;
 }
 
+const SCOPE_OPTIONS = [['auto', 'AI가 판단'], ['text', '글자만 고치기'], ['image', '그림도 다시 만들기']];
+
+function revisionPanel(p, plans, ui) {
+  const result = p.result;
+  const chosen = ui.reviseCards;
+  const scope = ui.drafts['revise:scope'] || 'auto';
+  const instruction = ui.drafts['revise:instruction'] || '';
+  const boxes = result.cards.map((c) => `
+    <label class="pick-card"><input type="checkbox" data-revise-card="${esc(c.cardId)}" ${chosen.has(c.cardId) ? 'checked' : ''}
+      ${c.image ? '' : 'disabled'}> ${plans[c.cardId].order}. ${esc(plans[c.cardId].title)}</label>`).join('');
+  const radios = SCOPE_OPTIONS.map(([v, label]) => `
+    <label><input type="radio" name="revise-scope" value="${v}" data-draft="revise:scope" ${v === scope ? 'checked' : ''}> ${label}</label>`).join('');
+  const ready = chosen.size > 0 && instruction.trim();
+  return `
+    <section class="panel">
+      <h2>카드 골라 고치기</h2>
+      <p class="muted small">고른 카드만 고쳐요. 나머지 카드는 그대로예요. 예: "3번 카드의 본문이 길어. 핵심 조건을 유지하며 두 문장으로 줄여 줘"</p>
+      <div class="pick-cards">${boxes}</div>
+      <textarea data-draft="revise:instruction" maxlength="500" rows="3" placeholder="무엇을 어떻게 고칠지 적어 주세요">${esc(instruction)}</textarea>
+      <div class="scope">그림: ${radios}</div>
+      <div class="row end">
+        <span class="small muted">${p.finalApproval ? '수정하면 최종 승인이 풀리고, 다시 승인해야 내려받을 수 있어요.' : '수정하면 최종 승인을 다시 받아야 해요.'}</span>
+        ${btn('revise', '선택한 카드만 수정', ui, { cls: 'primary', disabled: !ready || !!p.activeRun, data: `data-version="${result.version}"` })}
+      </div>
+    </section>`;
+}
+
+function approvePanel(p, ui) {
+  const cards = p.result.cards;
+  const notDone = cards.filter((c) => c.status !== 'done').length;
+  const failed = cards.filter((c) => layoutChecks(c)?.status === 'fail').length;
+  const warned = cards.filter((c) => layoutChecks(c)?.status === 'warn').length;
+  const blocked = notDone ? `완료되지 않은 카드가 ${notDone}장 있어요.` : failed ? `가독성 점검에 실패한 카드가 ${failed}장 있어요. 고친 뒤 승인할 수 있어요.` : '';
+  return `
+    <section class="panel">
+      <div class="row"><h2>최종 승인</h2>
+        ${btn('approve-final', `v${p.result.version} 최종 승인`, ui, { cls: 'primary', disabled: !!blocked || !!p.activeRun, data: `data-version="${p.result.version}"` })}</div>
+      <p class="small ${blocked ? 'warn-text' : 'muted'}">${esc(blocked || `승인하면 카드 PNG·ZIP·출처 기록·이미지 사용 기록을 만들고 다시 열어 검사해요.${warned ? ` 점검 '주의' 카드 ${warned}장이 있어요.` : ''}`)}</p>
+    </section>`;
+}
+
+const VERIFY_LABEL = { pass: '통과', fail: '실패', needs_check: '확인 필요' };
+
+export function finalView(p) {
+  const ex = p.exports;
+  const head = `<p>v${p.finalApproval.resultVersion}을 ${fmtTime(p.finalApproval.approvedAt)}에 최종 승인했어요.</p>`;
+  if (!ex) return `<section class="panel">${head}<p class="muted">내보내기 파일을 만드는 중이에요.</p></section>`;
+  const v = ex.verify;
+  const files = ex.files.map((f) => `<li><a href="${esc(f.url)}" download>${esc(f.name)}</a> <span class="muted small">${Math.max(1, Math.round(f.bytes / 1024))}KB</span></li>`).join('');
+  const todo = v.items.filter((i) => i.status !== 'pass').map((i) => `
+    <li><b>${esc(i.check)} · ${esc(i.target)}</b> <span class="badge vb-${esc(i.status)}">${VERIFY_LABEL[i.status]}</span><br>
+      ${esc(i.detail)}<br><span class="small">확인할 것: ${esc(i.whatToCheck || '')}</span></li>`).join('');
+  const rows = v.items.map((i) => `
+    <tr class="vr-${esc(i.status)}"><td>${esc(i.check)}</td><td>${esc(i.target)}</td>
+      <td><span class="badge vb-${esc(i.status)}">${VERIFY_LABEL[i.status]}</span></td>
+      <td>${esc(i.detail)}${i.whatToCheck ? `<br><b class="small">확인할 것:</b> <span class="small">${esc(i.whatToCheck)}</span>` : ''}</td></tr>`).join('');
+  return `
+    <section class="panel">
+      <h2>내려받기</h2>${head}
+      <ul class="downloads">${files}</ul>
+    </section>
+    <section class="panel">
+      <h2>내보낸 파일 검사</h2>
+      <p>통과 ${v.pass} · <span class="warn-text">실패 ${v.fail}</span> · <b>사용자 확인 필요 ${v.needs_check}</b></p>
+      <p class="small muted">ZIP을 다시 열어 누락·크기·글자 잘림·출처·날짜를 봤어요. 확인하지 못한 항목은 통과로 적지 않았어요.</p>
+      ${todo.length ? `<h3>직접 확인해 주세요</h3><ol class="todo">${todo}</ol>` : ''}
+      <div class="table-wrap"><table class="verify"><thead><tr><th>항목</th><th>대상</th><th>결과</th><th>내용</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </section>`;
+}
+
 export function reviewingView(p, ui) {
   const result = p.result;
   if (!result) return '';
@@ -460,13 +530,14 @@ export function reviewingView(p, ui) {
       <p class="muted">점검 통과 ${counts.pass} · 주의 ${counts.warn} · 실패 ${counts.fail}. 카드를 누르면 휴대폰 크기로 보고 글자를 고칠 수 있어요.</p>
       <div class="review-grid">${result.cards.map((c) => reviewTile(c, plans[c.cardId], { ...ui, openCard: open.cardId })).join('')}</div>
     </section>
-    ${cardDetail(open, plans[open.cardId], result.version, ui)}`;
+    ${cardDetail(open, plans[open.cardId], result.version, ui)}
+    ${revisionPanel(p, plans, ui)}
+    ${p.stage === 'reviewing' ? approvePanel(p, ui) : ''}`;
 }
 
 export function placeholderView(p) {
   const text = {
     created: '아직 조사를 시작하지 않았어요.',
-    final_approved: '내려받기 화면은 구현 5단계에서 연결해요.',
   }[p.stage];
   return text ? `<section class="panel notice">${esc(text)}</section>` : '';
 }

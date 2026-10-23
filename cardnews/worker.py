@@ -17,7 +17,7 @@ from cardnews.util import now_iso
 
 log = logging.getLogger("cardnews.worker")
 POLL_SECONDS = 0.3
-IMAGE_KINDS = ("production", "image_retry", "render")
+IMAGE_KINDS = ("production", "image_retry", "render", "revision")
 
 
 def recover_interrupted() -> int:
@@ -93,6 +93,10 @@ def _execute_images(run: dict, project: dict) -> None:
         production.execute(run, project, _context(run, project))
     except Cancelled:
         return
+    except AppError as err:  # 부분 수정의 엔진 오류처럼 카드에 닿기 전에 난 오류
+        with db.transaction() as conn:
+            pipeline.finish_run(conn, run["id"], "failed", err.to_dict())
+            _mark_cards(conn, run["projectId"], err.to_dict())
     except Exception:  # 예상 못 한 오류도 run에 남겨 화면에 보여요
         log.exception("run %s 실패", run["id"])
         with db.transaction() as conn:
@@ -101,9 +105,28 @@ def _execute_images(run: dict, project: dict) -> None:
             _mark_cards(conn, run["projectId"], error)  # "만드는 중"으로 멈춰 있지 않게요
 
 
+def _execute_export(run: dict, project: dict) -> None:
+    from cardnews import export
+    try:
+        export.execute(run, project, _context(run, project))
+    except Cancelled:
+        return
+    except Exception:  # 파일을 못 만들면 내려받기 목록을 보여 주지 않고 이유를 남겨요
+        log.exception("run %s 실패", run["id"])
+        with db.transaction() as conn:
+            error = AppError("INTERNAL_ERROR", "내보내기 파일을 만드는 중 오류가 났어요. 검수 화면에서 다시 최종 승인해 주세요.").to_dict()
+            pipeline.finish_run(conn, run["id"], "failed", error)
+            current = repo.get_project(conn, run["projectId"])
+            repo.save_project(conn, {**current, "stage": "reviewing",
+                                     "data": {**current["data"], "finalApproval": None}})
+
+
 def execute(run: dict) -> None:
     with db.transaction() as conn:
         project = repo.get_project(conn, run["projectId"])
+    if run["kind"] == "export":
+        _execute_export(run, project)
+        return
     if run["kind"] in IMAGE_KINDS:
         _execute_images(run, project)
         return

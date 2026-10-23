@@ -142,6 +142,21 @@ class CardLayout(BaseModel):
     requestId: str = request_id()
 
 
+class Revision(BaseModel):
+    cardIds: list[str] = Field(min_length=1, max_length=8)
+    instruction: str = Field(min_length=1, max_length=500)
+    imageScope: Literal["text", "image", "auto"] = "auto"
+    version: int
+    requestId: str = request_id()
+
+    @field_validator("instruction")
+    @classmethod
+    def _instruction(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("수정 지시를 적어 주세요.")
+        return value.strip()
+
+
 class Resume(BaseModel):
     mode: Literal["continue", "restart"]
     requestId: str = request_id()
@@ -264,6 +279,40 @@ def render_pending(project_id: str, req: RetryCard):
         return 202, service.render_pending(conn, project_id, req.resultVersion)
 
     return _respond(service.idempotent(project_id, req.requestId, "render", _body(req), action))
+
+
+@app.post("/api/projects/{project_id}/revisions")
+def request_revision(project_id: str, req: Revision):
+    def action(conn):
+        return 202, service.request_revision(conn, project_id, req.cardIds, req.instruction,
+                                             req.imageScope, req.version)
+
+    return _respond(service.idempotent(project_id, req.requestId, "revisions", _body(req), action))
+
+
+@app.get("/api/projects/{project_id}/exports")
+def list_exports(project_id: str):
+    with db.transaction() as conn:
+        return service.exports_view(repo.get_project(conn, project_id))
+
+
+EXPORT_TYPES = {".png": "image/png", ".zip": "application/zip", ".md": "text/markdown; charset=utf-8"}
+
+
+@app.get("/api/projects/{project_id}/exports/v{version}/{name:path}")
+def download_export(project_id: str, version: int, name: str):
+    """최종 승인된 버전의 내보내기 목록에 있는 파일만 내려받게 해요."""
+    missing = AppError("NOT_FOUND", "파일을 찾지 못했어요.")
+    with db.transaction() as conn:
+        view = service.exports_view(repo.get_project(conn, project_id))
+    if version != view["resultVersion"] or name not in {f["name"] for f in view["files"]}:
+        raise missing
+    target = config.data_dir() / "projects" / project_id / "exports" / f"v{version}" / name
+    if not target.is_file() or target.is_symlink():
+        raise missing
+    headers = {"Content-Security-Policy": "default-src 'none'; sandbox", "X-Content-Type-Options": "nosniff"}
+    return FileResponse(target, media_type=EXPORT_TYPES.get(target.suffix, "application/octet-stream"),
+                        filename=target.name, headers=headers)
 
 
 PROJECT_ID = re.compile(r"^prj_[0-9a-f]{12}$")

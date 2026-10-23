@@ -16,6 +16,7 @@ const ui = {
   drafts: {},              // 입력 중인 글·선택 (다시 그려도 남게)
   selected: new Set(),     // 체크한 후보
   openCard: null,          // 검수 화면에서 크게 보는 카드
+  reviseCards: new Set(),  // 고칠 카드로 고른 것
   saving: false,
 };
 let project = null;
@@ -44,7 +45,8 @@ function render() {
   if (['deep_researching', 'editing', 'storyboard_review'].includes(p.stage)) parts.push(V.notesView(p));
   if (p.stage === 'storyboard_review') parts.push(V.storyboardView(p, ui));
   if (p.stage === 'producing') parts.push(V.producingView(p, ui));
-  if (p.stage === 'reviewing') parts.push(V.reviewingView(p, ui));
+  if (p.stage === 'final_approved') parts.push(V.finalView(p));
+  if (['reviewing', 'final_approved'].includes(p.stage)) parts.push(V.reviewingView(p, ui));
   parts.push(V.placeholderView(p));
   $app.innerHTML = parts.join('');
 }
@@ -140,6 +142,17 @@ const actions = {
     resultVersion: Number(el.dataset.version), requestId: rid,
   })),
   'open-card': (el) => { ui.openCard = el.dataset.card; render(); },
+  revise: (el) => act('revise', async (rid) => {
+    await post(`${base()}/revisions`, {
+      cardIds: [...ui.reviseCards], instruction: (ui.drafts['revise:instruction'] || '').trim(),
+      imageScope: ui.drafts['revise:scope'] || 'auto', version: Number(el.dataset.version), requestId: rid,
+    });
+    ui.reviseCards = new Set();
+    delete ui.drafts['revise:instruction'];
+  }),
+  'approve-final': (el) => act('approve-final', (rid) => post(`${base()}/approve`, {
+    stage: 'final', version: Number(el.dataset.version), requestId: rid,
+  })),
   'apply-layout': (el) => {
     const id = el.dataset.card;
     const card = project.result.cards.find((c) => c.cardId === id);
@@ -212,6 +225,10 @@ $app.addEventListener('click', (event) => {
 $app.addEventListener('change', (event) => {
   const el = event.target;
   if (el.dataset.candidate) toggleCandidate(el);
+  else if (el.dataset.reviseCard) {
+    if (el.checked) ui.reviseCards.add(el.dataset.reviseCard); else ui.reviseCards.delete(el.dataset.reviseCard);
+    render();
+  }
   else if (el.type === 'radio' && el.dataset.draft) { ui.drafts[el.dataset.draft] = el.value; render(); }
   else if (el.tagName === 'SELECT' && el.dataset.draft) ui.drafts[el.dataset.draft] = el.value;
 });
@@ -221,6 +238,11 @@ $app.addEventListener('input', (event) => {
   if (el.dataset.draft && el.type !== 'radio') {
     ui.drafts[el.dataset.draft] = el.value;
     if (el.dataset.draft.startsWith('layout:')) return;  // 글자 조정 입력은 적용 버튼으로 보내요
+    if (el.dataset.draft === 'revise:instruction') {
+      const button = $app.querySelector('[data-action="revise"]');
+      if (button && !ui.pending.has('revise')) button.disabled = !(el.value.trim() && ui.reviseCards.size && !project.activeRun);
+      return;
+    }
     let action = 'feedback';
     if (el.dataset.draft.startsWith('free:')) {
       // 직접 입력칸에 쓰면 "직접 입력"을 고른 것으로 봐요

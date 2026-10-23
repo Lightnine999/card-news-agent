@@ -34,7 +34,7 @@ def idempotent(scope: str, request_id: str | None, endpoint: str, body: dict, ac
 # --- 공통 확인 -----------------------------------------------------------------
 
 
-IMAGE_KINDS = ("production", "image_retry", "render")
+IMAGE_KINDS = ("production", "image_retry", "render", "revision")
 
 
 def _require_stage(project: dict, *stages: str) -> None:
@@ -169,15 +169,48 @@ def _approve_storyboard(conn, project: dict, version: int) -> dict:
 
 
 def _approve_final(conn, project: dict, version: int) -> dict:
+    """최종 승인: 모든 카드가 완료이고 가독성 점검 실패 카드가 없을 때만. 승인하면 내보내기를 시작해요."""
     _require_stage(project, "reviewing")
     result = project["data"]["result"]
     _require_version(result["version"], version)
+    _require_idle(conn, project["id"])
     if any(card["status"] != "done" for card in result["cards"]):
         raise AppError("STAGE_CONFLICT", "모든 카드가 완료돼야 최종 승인할 수 있어요.")
+    failed = [c["cardId"] for c in result["cards"]
+              if ((c.get("checks") or {}).get("layout") or {}).get("status") == "fail"]
+    if failed:
+        raise AppError("STAGE_CONFLICT", "가독성 점검에 실패한 카드를 고친 뒤 승인할 수 있어요.", {"cards": failed})
     approval = {"resultVersion": version, "approvedAt": now_iso()}
-    repo.save_project(conn, {**project, "stage": "final_approved",
-                             "data": {**project["data"], "finalApproval": approval}})
-    return {"finalApproval": approval}
+    project = repo.save_project(conn, {**project, "stage": "final_approved",
+                                       "data": {**project["data"], "finalApproval": approval}})
+    _, run = _start_run(conn, project, "export", {"resultVersion": version})
+    return {"finalApproval": approval, "runId": run["id"]}
+
+
+def _unapprove(project: dict) -> dict:
+    """고치면 최종 승인이 풀려요. 단계는 검수로 돌아가요."""
+    if project["stage"] != "final_approved":
+        return project
+    return {**project, "stage": "reviewing", "data": {**project["data"], "finalApproval": None}}
+
+
+def request_revision(conn, project_id: str, card_ids: list[str], instruction: str,
+                     image_scope: str, version: int) -> dict:
+    """고른 카드만 글로 고치기. 받는 즉시 최종 승인을 풀어요."""
+    project = repo.get_project(conn, project_id)
+    _require_stage(project, "reviewing", "final_approved")
+    result = project["data"]["result"]
+    _require_version(result["version"], version)
+    ids = list(dict.fromkeys(card_ids))
+    known = {c["cardId"]: c for c in result["cards"]}
+    if not ids or not set(ids) <= set(known):
+        raise AppError("VALIDATION_ERROR", "고칠 카드를 1장 이상 골라 주세요.", {"unknown": sorted(set(ids) - set(known))})
+    if any(not known[i].get("image") for i in ids):
+        raise AppError("STAGE_CONFLICT", "그림이 준비된 카드만 고칠 수 있어요.")
+    _require_idle(conn, project_id)
+    _, run = _start_run(conn, _unapprove(project), "revision",
+                        {"cardIds": ids, "instruction": instruction, "imageScope": image_scope})
+    return {"runId": run["id"]}
 
 
 def _result_card(project: dict, card_id: str, result_version: int) -> tuple[dict, dict]:
@@ -212,9 +245,9 @@ TEXT_FIELDS = ("title", "keyLine", "body")
 
 
 def update_layout(conn, project_id: str, card_id: str, result_version: int, change: dict) -> dict:
-    """사용자가 고친 글자 배치를 저장하고 그 카드만 글자를 다시 올려요. 그림은 그대로예요."""
+    """사용자가 고친 글자 배치를 저장하고 그 카드만 글자를 다시 올려요. 그림은 그대로예요. 최종 승인은 풀려요."""
     project = repo.get_project(conn, project_id)
-    _require_stage(project, "producing", "reviewing")
+    _require_stage(project, "producing", "reviewing", "final_approved")
     result, card = _result_card(project, card_id, result_version)
     if not card.get("image") or card["status"] not in ("done", "failed"):
         raise AppError("STAGE_CONFLICT", "그림이 준비된 카드만 글자를 고칠 수 있어요.", {"status": card["status"]})
@@ -226,7 +259,7 @@ def update_layout(conn, project_id: str, card_id: str, result_version: int, chan
     edited = any(layout.get(k) is not None and layout[k] != plan.get(k) for k in TEXT_FIELDS)
     layout = {**layout, "textEdited": edited}
     cards = [{**c, "layout": layout} if c["cardId"] == card_id else c for c in result["cards"]]
-    project = {**project, "data": {**project["data"], "result": {**result, "cards": cards}}}
+    project = _unapprove({**project, "data": {**project["data"], "result": {**result, "cards": cards}}})
     _, run = _start_run(conn, project, "render", {"cardIds": [card_id]})
     return {"runId": run["id"]}
 
@@ -262,7 +295,10 @@ def cancel_run(conn, run_id: str) -> dict:
     if run["kind"] in IMAGE_KINDS:
         card_error = AppError("CANCELLED", "취소해서 이 카드를 끝내지 못했어요.").to_dict()
         data = {**data, "result": production.mark_unfinished(data["result"], card_error)}
-    repo.save_project(conn, {**project, "stage": run["payload"]["prevStage"], "data": data})
+    project = {**project, "stage": run["payload"]["prevStage"], "data": data}
+    if run["kind"] == "export":  # 내보내기를 취소하면 승인을 풀어 검수에서 다시 승인할 수 있게 해요
+        project = _unapprove(project)
+    repo.save_project(conn, project)
     return {"status": "cancelled"}
 
 
@@ -273,6 +309,10 @@ def resume_run(conn, run_id: str, mode: str) -> dict:
                        {"status": run["status"]})
     project = repo.get_project(conn, run["projectId"])
     _require_idle(conn, project["id"])
+    if run["kind"] == "export":
+        raise AppError("STAGE_CONFLICT", "내보내기는 이어갈 수 없어요. 검수 화면에서 다시 최종 승인해 주세요.")
+    if run["kind"] in ("revision", "render"):
+        project = _unapprove(project)  # 카드를 다시 고치는 작업이라 승인을 풀어요
     same_engine = run["payload"].get("engineName") == project["engineName"]
     images = run["kind"] in IMAGE_KINDS  # 그림 작업은 엔진 세션 없이 남은 카드만 이어서 만들어요
     if mode == "continue" and not images and not (project["sessionId"] and same_engine):
@@ -280,9 +320,27 @@ def resume_run(conn, run_id: str, mode: str) -> dict:
                        next_actions=["restart"])
     if mode == "restart":
         project = {**project, "sessionId": None}
-    payload = {k: v for k, v in run["payload"].items() if k not in ("question", "answer")}
+    dropped = ("question", "answer") + (("edits", "redraw") if mode == "restart" else ())  # 처음부터면 엔진을 다시 불러요
+    payload = {k: v for k, v in run["payload"].items() if k not in dropped}
     payload = {**payload, "phase": "start", "requestedAt": None,
                "onlyUnfinished": images and mode == "continue"}
     new_run = repo.insert_run(conn, project["id"], run["kind"], payload, resumed_from=run_id)
     repo.save_project(conn, {**project, "stage": pipeline.STAGE_OF_KIND.get(run["kind"], project["stage"])})
     return {"runId": new_run["id"]}
+
+
+# --- 내려받기 ---------------------------------------------------------------------
+
+
+def exports_view(project: dict) -> dict:
+    """최종 승인된 버전의 내보내기 목록과 검사 결과. 승인 전·수정 중이면 거절해요."""
+    approval = project["data"].get("finalApproval")
+    exports = project["data"].get("exports")
+    if project["stage"] != "final_approved" or not approval:
+        raise AppError("STAGE_CONFLICT", "최종 승인한 뒤에 내려받을 수 있어요.")
+    if not exports or exports["resultVersion"] != approval["resultVersion"]:
+        raise AppError("STAGE_CONFLICT", "내보내기 파일을 만드는 중이에요. 잠시 뒤 다시 봐 주세요.")
+    base = f"/api/projects/{project['id']}/exports/v{exports['resultVersion']}/"
+    files = [{**f, "url": base + f["name"]} for f in exports["files"]]
+    return {"resultVersion": exports["resultVersion"], "createdAt": exports["createdAt"],
+            "files": files, "verify": exports["verify"]}

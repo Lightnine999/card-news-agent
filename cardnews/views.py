@@ -1,6 +1,6 @@
 """GET 응답 모양 (API_SPEC 2.1, 2.6)."""
 
-from cardnews import questions, repo, sources
+from cardnews import questions, repo, service, sources
 
 
 def public_run(run: dict | None) -> dict | None:
@@ -32,6 +32,11 @@ def _result_view(project_id: str, result: dict | None) -> dict | None:
     return {**result, "cards": cards}
 
 
+def _exports_ready(data: dict) -> bool:
+    approval, exports = data.get("finalApproval"), data.get("exports")
+    return bool(approval and exports and exports["resultVersion"] == approval["resultVersion"])
+
+
 def project_view(conn, project: dict) -> dict:
     data = project["data"]
     current = questions.open_question(data)
@@ -53,7 +58,8 @@ def project_view(conn, project: dict) -> dict:
         "activeRun": public_run(repo.active_run(conn, project["id"])),
         "lastRun": public_run(repo.last_run(conn, project["id"])),
         "finalApproval": data["finalApproval"],
-        "exportsReady": False,
+        "exportsReady": _exports_ready(data),
+        "exports": service.exports_view(project) if _exports_ready(data) and project["stage"] == "final_approved" else None,
         "createdAt": project["createdAt"],
     }
 

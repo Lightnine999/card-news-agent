@@ -13,6 +13,7 @@ STAGE_OF_KIND = {
     "storyboard": "editing",
     "production": "producing",
     "image_retry": "producing",
+    "revision": "reviewing",
 }
 
 

@@ -29,6 +29,7 @@ LIMITS = {  # (최대 턴, 제한 시간 초) [AI 기본안]
     "answer": (12, 300),
     "storyboard": (12, 300),
     "svg": (4, 240),  # agy 대신 SVG 그림 그리기
+    "revision": (6, 300),  # 고른 카드만 글로 고치기
 }
 POLL_SECONDS = 0.5
 STDERR_KEEP = 4000

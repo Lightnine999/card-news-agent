@@ -163,3 +163,19 @@ textarea { width: 100%; min-height: 72px; margin-top: 6px; }
   border-radius: 6px; background: var(--surface); color: var(--text); }
 .warn-text { color: var(--warn); }
 @media (max-width: 600px) { .original { display: none; } }
+
+/* 카드 고치기·최종 승인·내려받기 (S7·S8) */
+.pick-cards { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0; }
+.pick-card { font-size: .9rem; }
+.panel textarea { width: 100%; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--text); }
+.scope { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; font-size: .9rem; }
+.downloads { padding-left: 20px; }
+.table-wrap { overflow-x: auto; }
+table.verify { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.verify th, table.verify td { border-bottom: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+.badge.vb-pass { color: var(--ok); border-color: var(--ok); }
+.badge.vb-fail { color: var(--warn); border-color: var(--warn); }
+.badge.vb-needs_check { background: var(--mock); color: var(--mock-text); border-color: transparent; }
+tr.vr-needs_check td { background: color-mix(in srgb, var(--mock) 40%, transparent); }
+.todo li { margin-bottom: 10px; }

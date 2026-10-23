@@ -290,6 +290,7 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 | 16 | `GET /api/health` **[추가]** | 없음 | `200 { claude, agy, chromium, font }` 각각 사용 가능 여부 | – |
 | 17 | `POST /api/projects/{id}/cards/{cardId}/layout` **[추가]** | `resultVersion`, `layout`(바꿀 항목만), `requestId` | `202 { runId }` | 필수 |
 | 18 | `POST /api/projects/{id}/render` **[추가]** | `resultVersion`, `requestId` | `202 { runId }` | 필수 |
+| 19 | `GET /api/projects/{id}/exports/v{버전}/{파일}` **[추가]** | 없음 | 파일 내려받기 | – |
 
 ### 엔드포인트별 규칙
 
@@ -307,9 +308,9 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 3. `answer`는 `{ "optionId": "dev" }`, `{ "optionIds": [...] }`(multiSelect), `{ "freeText": "..." }`(1~300자) 중 하나.
 4. 한 트랜잭션에서 답 저장 + 질문 `answered` + run `running`으로 바꾸고, 같은 엔진 세션으로 다음 호출을 시작해요.
 
-**9. 승인** — `storyboard`는 `stage=storyboard_review`이고 `version=storyboard.version`일 때, 제작 run을 시작해요. `final`은 `stage=reviewing`이고 모든 카드가 `done`이며 `version=result.version`일 때, 그 버전을 최종 승인으로 저장하고 내보내기 run을 시작해요.
+**9. 승인** — `storyboard`는 `stage=storyboard_review`이고 `version=storyboard.version`일 때, 제작 run을 시작해요. `final`은 `stage=reviewing`이고 모든 카드가 `done`이며 가독성 점검 실패(`checks.layout.status=fail`) 카드가 없고 `version=result.version`일 때, 그 버전을 최종 승인으로 저장하고 내보내기 run을 시작해요(`200 { finalApproval, runId }`). 글자 조정(17)·부분 수정(10)을 하면 승인이 풀려요.
 
-**10. 부분 수정** — `cardIds`의 카드만 새 `cardVersion`을 만들어요. 나머지 카드 파일은 건드리지 않아요. 요청을 받으면 바로 최종 승인을 해제(`finalApproval=null`)하고 `result.version`을 올려요. 이미지를 다시 만들지 글자만 고칠지는 엔진이 지시문을 보고 정해요.
+**10. 부분 수정** — `cardIds`의 카드만 새 `cardVersion`을 만들어요. 나머지 카드 파일은 건드리지 않아요. 요청을 받으면 바로 최종 승인을 해제(`finalApproval=null`, 단계 `reviewing`)하고 `result.version`을 올려요. 본문에 `imageScope`(`text`: 글자만 / `image`: 그림도 다시 / `auto`: 엔진 판단, 기본)를 받아요. 단계 `reviewing`·`final_approved`에서 받아요. 엔진은 새 세션·검색 없이 고른 카드의 새 문구(제목 30·핵심 60·본문 160자)와 `redrawImage`를 돌려주고, 고르지 않은 카드는 결과에 있어도 버려요(D19, docs/2026-10-23-revision-export-design.md).
 
 **11. 카드 재시도** — `status=failed` 카드, 그리고 agy 대신 Claude CLI SVG로 그린 카드(`image.fallbackFrom`이 있는 `image_ready`)에만 받아요. 같은 이미지 요청으로 다시 만들어요(DECISIONS D17).
 
@@ -323,7 +324,9 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 - `sources.md`: 카드별 근거 출처, 조사 기준 시각·기간
 - `image-credits.md`: 생성 이미지(도구·날짜·프롬프트), 스톡 이미지(URL·작가·라이선스·표기)
 - PDF는 이번 범위에서 빼요(선택 기능).
-- 내보내기 run은 ZIP을 만든 뒤 다시 열어서 파일 목록과 PNG 크기를 확인해요. 확인을 통과한 파일만 목록에 올려요.
+- 내보내기 run은 ZIP을 만든 뒤 다시 열어서 검사해요: 누락·크기·글자 잘림·출처·날짜. 결과는 통과·실패·**사용자 확인 필요** 셋 중 하나이고, 확인하지 못한 것은 통과로 적지 않아요(`verify.md`, 응답의 `verify`). 실패한 파일도 목록에서 빼지 않고 검사 결과에 표시해요.
+- 응답: `{ resultVersion, createdAt, files: [{ name, bytes, url }], verify: { pass, fail, needs_check, items: [{ check, target, status, detail, whatToCheck }] } }`. 프로젝트 응답(2.1)에도 같은 값이 `exports`로 들어가요.
+- 내려받기: `GET /api/projects/{id}/exports/v<버전>/<파일>` — 목록에 있는 파일만, `Content-Disposition: attachment`.
 
 **15. 파일** — `data/projects/{id}/` 밖을 가리키는 경로(`..`, 절대경로, 심볼릭 링크)는 `NOT_FOUND`. 응답 `Content-Type`은 실제 파일 시그니처로 정해요.
 
