@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from tests.conftest import rid
 
 FAKE = Path(__file__).parent / "fake_agy.py"
+FAKE_CLAUDE = Path(__file__).parent / "fake_claude.py"
 
 
 @pytest.fixture
@@ -22,6 +23,9 @@ def app_client(tmp_path, monkeypatch):
     wrapper = tmp_path / "agy"
     wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" "$@"\n')
     wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
+    claude = tmp_path / "claude"  # 대신 만들기(SVG)가 실제 claude를 부르지 않게 가짜를 연결해요
+    claude.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE_CLAUDE}" "$@"\n')
+    claude.chmod(claude.stat().st_mode | stat.S_IEXEC)
     brain = tmp_path / "brain"
     brain.mkdir()
     for key, value in {
@@ -30,6 +34,8 @@ def app_client(tmp_path, monkeypatch):
         "CARDNEWS_AGY_BIN": str(wrapper), "CARDNEWS_AGY_BRAIN": str(brain),
         "CARDNEWS_AGY_WAIT": "0.3", "FAKE_AGY_BRAIN": str(brain),
         "FAKE_AGY_LOG": str(tmp_path / "agy-calls.jsonl"), "FAKE_AGY_PID": str(tmp_path / "agy.pid"),
+        "CARDNEWS_CLAUDE_BIN": str(claude), "FAKE_CLAUDE_LOG": str(tmp_path / "claude-calls.jsonl"),
+        "CARDNEWS_IMAGE_FALLBACK": "none",  # 대신 만들기는 그 테스트에서만 켜요
     }.items():
         monkeypatch.setenv(key, value)
     from cardnews import db
@@ -294,3 +300,62 @@ def test_cancel_marks_unfinished_cards(app_client, monkeypatch):
     cards = get(app_client, pid)["result"]["cards"]
     assert {c["status"] for c in cards} == {"failed"}
     assert {c["error"]["code"] for c in cards} == {"CANCELLED"}
+
+
+# --- agy가 못 만들면 Claude CLI가 SVG로 대신 만들기 ----------------------------------
+
+
+def svg_calls(c) -> list[list[str]]:
+    log = c.tmp / "claude-calls.jsonl"
+    calls = [json.loads(l)["argv"] for l in log.read_text().splitlines()] if log.exists() else []
+    return [a for a in calls if json.loads(a[a.index("--json-schema") + 1])["title"] == "SvgImageOutput"]
+
+
+def test_failed_agy_card_is_drawn_as_svg_by_claude(app_client, monkeypatch):
+    monkeypatch.setenv("CARDNEWS_IMAGE_FALLBACK", "claude")
+    monkeypatch.setenv("FAKE_AGY_FAIL_ON", "카드 2/")
+    pid, p = produced(app_client)
+    cards = p["result"]["cards"]
+    assert {c["status"] for c in cards} == {"image_ready"}
+    card_2 = cards[1]["image"]
+    assert card_2["origin"] == "generated-svg" and card_2["originalFormat"] == "svg"
+    assert card_2["originalSize"] == [1080, 1350] and card_2["file"].endswith("card_2.v1.svg")
+    assert card_2["fallbackFrom"]["tool"] == "agy" and card_2["fallbackFrom"]["code"] == "IMAGE_FAILED"
+    assert cards[0]["image"]["origin"] == "generated"  # 나머지는 agy 그림 그대로
+    assert len(svg_calls(app_client)) == 1
+    res = app_client.get(cards[1]["imageUrl"])
+    assert res.headers["content-type"].startswith("image/svg+xml")
+    assert "default-src 'none'" in res.headers["content-security-policy"]  # SVG 안 스크립트 실행 막기
+    assert "<text" not in res.text and "<script" not in res.text
+
+
+def test_svg_prompt_keeps_same_style_and_no_text(app_client, monkeypatch):
+    monkeypatch.setenv("CARDNEWS_IMAGE_FALLBACK", "claude")
+    monkeypatch.setenv("FAKE_AGY_FAIL_ON", "카드 1/")
+    produced(app_client)
+    argv = svg_calls(app_client)[0]
+    prompt = argv[argv.index("-p") + 1]
+    from cardnews.images import agy
+
+    assert agy.STYLE in prompt and "위쪽" in prompt and "<text>" in prompt  # 같은 그림체·여백·글자 금지
+    assert "--resume" not in argv  # 조사 세션과 섞지 않아요
+    assert "WebSearch" in argv[argv.index("--disallowedTools") + 1:]
+
+
+def test_missing_agy_draws_every_card_as_svg(app_client, monkeypatch):
+    monkeypatch.setenv("CARDNEWS_IMAGE_FALLBACK", "claude")
+    monkeypatch.setenv("CARDNEWS_AGY_BIN", str(app_client.tmp / "nope"))
+    _, p = produced(app_client)
+    cards = p["result"]["cards"]
+    assert {c["image"]["origin"] for c in cards} == {"generated-svg"}
+    assert {c["image"]["fallbackFrom"]["code"] for c in cards} == {"TOOL_UNAVAILABLE"}
+
+
+def test_both_failing_shows_both_reasons(app_client, monkeypatch):
+    monkeypatch.setenv("CARDNEWS_IMAGE_FALLBACK", "claude")
+    monkeypatch.setenv("FAKE_AGY_FAIL_ON", "카드 2/")
+    monkeypatch.setenv("FAKE_CLAUDE_SCENARIO", "svg_bad")
+    _, p = produced(app_client)
+    card_2 = p["result"]["cards"][1]
+    assert card_2["status"] == "failed"
+    assert "agy" in card_2["error"]["message"] and "Claude CLI" in card_2["error"]["message"]

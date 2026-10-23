@@ -12,16 +12,44 @@ from pathlib import Path
 from cardnews import config, db, pipeline, repo
 from cardnews.engines.base import Cancelled, RunContext
 from cardnews.errors import AppError
-from cardnews.images import agy, mock
+from cardnews.images import agy, claude_svg, mock
 
 STOP_CODES = {"AUTH_REQUIRED", "TOOL_UNAVAILABLE"}
 
 
-def _generator(project: dict):
+def _tools(project: dict) -> dict:
+    """그림 도구 계획: 기본 도구, 대안(Claude CLI SVG), 그리고 기본 도구가 이미 쓸 수 없는지."""
     choice = config.image_gen()
     if choice == "mock" or (choice == "auto" and project["isMock"]):
-        return mock.generate, "모의 그림 생성기"
-    return agy.generate, agy.agy_version()
+        return {"primary": (mock.generate, "모의 그림 생성기"), "fallback": None, "down": None}
+    fallback = (claude_svg.generate, claude_svg.tool_name()) if config.image_fallback() == "claude" else None
+    try:
+        return {"primary": (agy.generate, agy.agy_version()), "fallback": fallback, "down": None}
+    except AppError as err:  # agy가 없으면 처음부터 대안으로 그려요
+        return {"primary": None, "fallback": fallback, "down": err}
+
+
+def _draw(ctx: RunContext, tools: dict, plan: dict, index: int, total: int, stem: Path) -> dict:
+    """agy로 그리고, 못 그리면 Claude CLI SVG로 대신 그려요. 둘 다 못 그리면 두 이유를 함께 알려요."""
+    agy_error = tools["down"]
+    if tools["primary"] and agy_error is None:
+        generate, tool = tools["primary"]
+        try:
+            return generate(ctx, plan, index, total, stem, tool)
+        except AppError as err:
+            agy_error = err
+            if err.code in STOP_CODES:
+                tools["down"] = err  # 남은 카드는 agy를 다시 부르지 않아요
+    if tools["fallback"] is None:
+        raise agy_error
+    generate, tool = tools["fallback"]
+    ctx.report(f"agy 대신 Claude CLI로 그리는 중: {index}/{total} ({agy_error.message[:40]})")
+    try:
+        record = generate(ctx, plan, index, total, stem, tool)
+    except AppError as err:
+        raise AppError(err.code, f"agy로 못 만들었어요({agy_error.message}). "
+                                 f"Claude CLI로도 못 만들었어요({err.message})") from err
+    return {**record, "fallbackFrom": {"tool": "agy", "code": agy_error.code, "message": agy_error.message}}
 
 
 # --- 결과(result) 갱신 ------------------------------------------------------------
@@ -88,13 +116,13 @@ def _targets(run: dict, storyboard: dict, result: dict | None) -> tuple[list[dic
     return storyboard["cards"], True
 
 
-def _make_one(ctx: RunContext, generate, tool: str, card: dict, total: int, result: dict) -> None:
+def _make_one(ctx: RunContext, tools: dict, card: dict, total: int, result: dict) -> None:
     version = next(c["cardVersion"] for c in result["cards"] if c["cardId"] == card["id"])
     project_dir = config.data_dir() / "projects" / ctx.project_id
     stem = project_dir / "results" / "images" / f"{card['id']}.v{version}"
     _update(ctx.run_id, _set_card(card["id"], status="generating_image"))
     ctx.report(f"그림 만드는 중: {card['order']}/{total} {card['title'][:30]}")
-    record = generate(ctx, card["imagePlan"], card["order"], total, stem, tool)
+    record = _draw(ctx, tools, card["imagePlan"], card["order"], total, stem)
     dest: Path = record.pop("dest")
     image = {**record, "file": dest.relative_to(project_dir).as_posix()}
     _update(ctx.run_id, _set_card(card["id"], status="image_ready", image=image))
@@ -112,15 +140,11 @@ def execute(run: dict, project: dict, ctx: RunContext) -> None:
     storyboard = project["data"]["storyboard"]
     targets, fresh = _targets(run, storyboard, project["data"]["result"])
     result = _update(run["id"], _start_result(storyboard, {c["id"] for c in targets}, fresh))
-    try:
-        generate, tool = _generator(project)
-    except AppError as err:
-        _update(run["id"], _fail([c["id"] for c in targets], err))
-        targets = []
+    tools = _tools(project)
     total = len(storyboard["cards"])
     for i, card in enumerate(targets):
         try:
-            _make_one(ctx, generate, tool, card, total, result)
+            _make_one(ctx, tools, card, total, result)
         except AppError as err:
             stop = err.code in STOP_CODES
             ids = [c["id"] for c in targets[i:]] if stop else [card["id"]]

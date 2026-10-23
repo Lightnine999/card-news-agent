@@ -402,3 +402,10 @@ def test_expand_question_counts_after_exclusion(client, run_worker):
     q = get(client, pid)["currentQuestion"]
     assert q["id"] == "q_expand_period"
     assert "3개" in q["prompt"]  # 뺀 뒤 남은 개수로 물어요
+
+
+def test_storyboard_cards_have_body_and_image_role(client, run_worker):
+    _, p = to_storyboard(client, run_worker)
+    cards = p["storyboard"]["cards"]
+    assert 5 <= len(cards) <= 8
+    assert all(c["keyLine"] and c["body"] and c["imageRole"] and c["sourceUrls"] for c in cards)

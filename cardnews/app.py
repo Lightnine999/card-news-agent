@@ -239,7 +239,10 @@ def project_file(project_id: str, path: str):
     media = image_files.content_type(target)
     if media is None:
         raise missing
-    return FileResponse(target, media_type=media)
+    # SVG를 주소로 직접 열어도 그 안의 스크립트·외부 요청이 실행되지 않게 막아요
+    headers = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+               "X-Content-Type-Options": "nosniff"}
+    return FileResponse(target, media_type=media, headers=headers)
 
 
 # --- 작업 ------------------------------------------------------------------------

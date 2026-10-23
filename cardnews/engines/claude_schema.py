@@ -14,7 +14,7 @@ from pydantic import BaseModel, ValidationError
 from cardnews.errors import AppError
 
 MAX_CANDIDATES = 12
-CARD_RANGE = (3, 10)
+CARD_RANGE = (5, 8)  # 사용자 결정: 5~8장
 QUESTION_ID = re.compile(r"^q_[a-z0-9_]{1,40}$")
 SOURCE_RANK = {"official": 0, "paper": 1, "press": 2, "blog": 3, "unknown": 4}
 
@@ -103,6 +103,8 @@ class CardOut(BaseModel):
     role: Literal["cover", "body", "summary", "next_action"]
     title: str
     keyLine: str
+    body: str
+    imageRole: str
     sourceUrls: list[str]
     imagePlan: ImagePlanOut
 
@@ -234,6 +236,7 @@ def to_cards(cards: list[CardOut], allowed: set[str]) -> list[dict]:
         raise invalid(f"스토리보드가 {len(cards)}장이에요. {low}~{high}장이어야 해요.")
     return [{
         "id": f"card_{i}", "order": i, "role": c.role, "title": c.title, "keyLine": c.keyLine,
+        "body": c.body, "imageRole": c.imageRole,
         # 조사에 없던 URL은 근거로 인정하지 않아요 → 화면에 "근거 없음"으로 보여요
         "sourceUrls": [u for u in safe_urls(c.sourceUrls) if u in allowed],
         "imagePlan": c.imagePlan.model_dump(),

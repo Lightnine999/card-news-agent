@@ -440,6 +440,8 @@ args = ["agy", "-p", image_prompt, "--output-format", "json", "--print-timeout",
 
 agy에게 파일을 옮기거나 복사하라고 하지 않아요. 그림은 agy가 자기 폴더에 저장하고, 앱이 가져와요(DECISIONS D11).
 
+agy로 못 만들면 Claude CLI로 SVG 그림을 그려 대신 써요. 받은 SVG는 허용한 도형만 남기고 글자·스크립트·외부 주소를 지운 뒤 저장해요(DECISIONS D16).
+
 1. 응답 JSON의 `conversation_id`를 받아요. `status=SUCCESS`만으로 성공 처리하지 않아요.
 2. `~/.gemini/antigravity-cli/brain/<conversation_id>/`에서 이번 run 시작 이후 만들어진 이미지 파일을 찾아요.
 3. 파일 시그니처로 PNG/JPEG/WebP를 확인하고 실제 픽셀 크기를 읽어요. 짧은 변이 512px 미만이면 실패 **[AI 기본안]**.

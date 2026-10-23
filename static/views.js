@@ -244,12 +244,14 @@ export function storyboardView(p, ui) {
   const sb = p.storyboard;
   if (!sb) return '';
   const decided = e.decidedBy === 'user_answer' ? '답해 주신 내용으로 정했어요' : 'AI가 판단했어요';
+  const link = (u, i) => `<a href="${esc(safeUrl(u))}" target="_blank" rel="noopener noreferrer">출처 ${i + 1}</a>`;
   const rows = sb.cards.map((c) => `
     <tr class="${c.sourceUrls.length ? '' : 'no-source'}">
-      <td>${c.order}</td><td>${esc(ROLE_LABEL[c.role] || c.role)}</td>
-      <td>${esc(c.title)}</td><td>${esc(c.keyLine)}</td>
-      <td>${c.sourceUrls.length ? c.sourceUrls.map((u) => `<a href="${esc(safeUrl(u))}" target="_blank" rel="noopener noreferrer">링크</a>`).join(' ') : '<b>근거 없음</b>'}</td>
-      <td>${esc(c.imagePlan.kind === 'generated' ? '생성' : c.imagePlan.kind)} / 글자 ${esc(TEXT_AREA_LABEL[c.imagePlan.textArea] || c.imagePlan.textArea)}</td>
+      <td>${c.order}<br><span class="muted small">${esc(ROLE_LABEL[c.role] || c.role)}</span></td>
+      <td><b>${esc(c.title)}</b><br>${esc(c.keyLine)}</td>
+      <td>${esc(c.body || '—')}</td>
+      <td>${esc(c.imageRole || '—')}<br><span class="muted small">제목 자리: ${esc(TEXT_AREA_LABEL[c.imagePlan.textArea] || c.imagePlan.textArea)}</span></td>
+      <td>${c.sourceUrls.length ? c.sourceUrls.map(link).join('<br>') : '<b>근거 없음</b>'}</td>
     </tr>`).join('');
   return `
     <section class="panel">
@@ -262,9 +264,9 @@ export function storyboardView(p, ui) {
       </dl>
     </section>
     <section class="panel">
-      <h2>스토리보드 v${sb.version} · ${sb.cards.length}장</h2>
+      <h2>스토리보드 v${sb.version} · ${sb.cards.length}장 <span class="muted small">(한 장에 메시지 하나)</span></h2>
       <div class="table-wrap"><table class="board">
-        <thead><tr><th>장</th><th>역할</th><th>제목</th><th>핵심 문장</th><th>근거</th><th>그림</th></tr></thead>
+        <thead><tr><th>장</th><th>제목 · 핵심 문장</th><th>본문</th><th>이미지 역할</th><th>출처</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
       <label class="feedback">변경 요청
         <textarea maxlength="500" data-draft="feedback:${sb.version}" placeholder="예: 표지 문장을 더 짧게">${esc(ui.drafts[`feedback:${sb.version}`] || '')}</textarea>
@@ -286,7 +288,8 @@ function imageMeta(img) {
   const [w, h] = img.originalSize;
   const size = `${w}×${h} ${esc(img.originalFormat.toUpperCase())}`;
   if (img.origin === 'mock') return `모의 그림 · ${size}`;
-  return `${esc(img.disclosure)} · ${esc(img.tool)} · ${size}`;
+  const instead = img.fallbackFrom ? `<br>agy로 못 만들어 대신 그렸어요: ${esc(img.fallbackFrom.message)}` : '';
+  return `${esc(img.disclosure)} · ${esc(img.tool)} · ${size}${instead}`;
 }
 
 function productionCard(card, sb, version, ui) {

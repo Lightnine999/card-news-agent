@@ -132,7 +132,9 @@ def _storyboard_cards(audience: str, candidates: list[dict], note: str = "") -> 
     return [
         {
             "id": f"card_{i + 1}", "order": i + 1, "role": role, "title": title,
-            "keyLine": key, "sourceUrls": [urls[i % len(urls)]] if urls[0] else [],
+            "keyLine": key, "body": f"{key}에 대한 모의 본문 문장이에요.",
+            "imageRole": "분위기 잡기" if role == "cover" else "핵심을 비유로 보여 주기",
+            "sourceUrls": [urls[i % len(urls)]] if urls[0] else [],
             "imagePlan": {"kind": "generated", "textArea": "top",
                           "prompt": "짙은 남색 추상 기술 배경, 위쪽 40% 비움, 글자·로고 없음"},
         }

@@ -1,13 +1,17 @@
 """그림 파일 검사: 확장자가 아니라 파일 앞부분(시그니처)으로 형식을, 헤더로 실제 픽셀 크기를 읽어요."""
 
 import hashlib
+import re
 import struct
 from pathlib import Path
 
 MIN_SHORT_SIDE = 512  # 이보다 작으면 카드 배경으로 못 써요 [AI 기본안]
 HEAD_BYTES = 256 * 1024
-CONTENT_TYPES = {"png": "image/png", "jpeg": "image/jpeg", "webp": "image/webp"}
-EXTENSIONS = {"png": "png", "jpeg": "jpg", "webp": "webp"}
+CONTENT_TYPES = {"png": "image/png", "jpeg": "image/jpeg", "webp": "image/webp",
+                 "svg": "image/svg+xml"}
+EXTENSIONS = {"png": "png", "jpeg": "jpg", "webp": "webp", "svg": "svg"}
+SVG_ROOT = re.compile(rb"<svg\b[^>]*>", re.IGNORECASE | re.DOTALL)
+SVG_SIZE = re.compile(rb'\b(width|height)="(\d+)"')
 
 
 def _jpeg_size(head: bytes) -> tuple[int, int] | None:
@@ -51,7 +55,17 @@ def image_info(path: Path) -> tuple[str, int | None, int | None] | None:
         return ("jpeg", *(_jpeg_size(head) or (None, None)))
     if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
         return ("webp", *(_webp_size(head) or (None, None)))
-    return None
+    return _svg_info(head)
+
+
+def _svg_info(head: bytes) -> tuple[str, int | None, int | None] | None:
+    """앱이 정리해 저장한 SVG만 그림으로 봐요: 맨 앞이 <svg이고, 보이는 크기(width·height)를 읽어요."""
+    if not head.lstrip().startswith(b"<svg"):
+        return None
+    root = SVG_ROOT.search(head)
+    sizes = dict(SVG_SIZE.findall(root.group(0))) if root else {}
+    width, height = sizes.get(b"width"), sizes.get(b"height")
+    return ("svg", int(width) if width else None, int(height) if height else None)
 
 
 def sha256(path: Path) -> str:

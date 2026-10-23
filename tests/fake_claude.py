@@ -60,7 +60,8 @@ def deep(prompt: str) -> dict:
 
 def cards() -> list[dict]:
     roles = ["cover", "body", "body", "body", "summary"]
-    return [{"role": r, "title": f"카드 {i}", "keyLine": "핵심",
+    return [{"role": r, "title": f"카드 {i}", "keyLine": "핵심", "body": f"카드 {i} 본문 문장이에요.",
+             "imageRole": "분위기 잡기",
              "sourceUrls": ["https://news.example.com/1", "https://made-up.example.com/x"],
              "imagePlan": {"kind": "generated", "prompt": "배경", "textArea": "top"}}
             for i, r in enumerate(roles, 1)]
@@ -110,7 +111,13 @@ def main() -> None:
         emit({"type": "result", "subtype": "success", "is_error": False, "session_id": SESSION,
               "result": "형식 없는 글", "structured_output": None, "permission_denials": []})
         return
-    if kind == "ResearchOutput":
+    if kind == "SvgImageOutput":
+        svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1350">'
+               '<rect width="1080" height="1350" fill="#102040"/><circle cx="540" cy="1000" r="200" fill="#187882"/>'
+               '<path d="M0 1200 L1080 900 L1080 1350 Z" fill="#264653"/><text x="40" y="80">글자</text>'
+               '<script>alert(1)</script></svg>')
+        out = {"svg": "그림을 그리지 못했어요" if scenario == "svg_bad" else svg}
+    elif kind == "ResearchOutput":
         fetch("f1", "https://www.news.example.com/1/", 200)   # 주소 모양이 달라도 같은 페이지
         fetch("f2", "https://news.example.com/2", 403)        # 막힌 페이지는 연 것이 아니에요
         out = research(3 if scenario == "few" else 8, prompt, scenario)

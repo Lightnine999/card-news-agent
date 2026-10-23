@@ -40,6 +40,11 @@ def image_gen() -> str:
     return os.environ.get("CARDNEWS_IMAGE_GEN", "auto")
 
 
+def image_fallback() -> str:
+    """agy로 그림을 못 만들면 쓸 대안: claude(Claude CLI로 SVG) 또는 none (사용자 결정 D16)."""
+    return os.environ.get("CARDNEWS_IMAGE_FALLBACK", "claude")
+
+
 def agy_bin() -> str:
     return os.environ.get("CARDNEWS_AGY_BIN", "agy")
 
