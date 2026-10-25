@@ -31,7 +31,7 @@ def source_index(data: dict) -> dict[str, dict]:
             index.setdefault(sources.normalize(src["url"]), {
                 "url": src["url"], "name": src.get("name") or src["url"], "type": src.get("type", "unknown"),
                 "publishedAt": cand.get("publishedAt"), "eventDate": cand.get("eventDate"),
-                "candidate": cand["title"], "opened": src["opened"]})
+                "candidate": cand["title"], "candidateId": cand["id"], "opened": src["opened"]})
     for note in data.get("researchNotes") or []:  # 심층 조사에서 따로 찾은 공식 자료
         for url in note.get("primarySources", []):
             key = sources.normalize(url)

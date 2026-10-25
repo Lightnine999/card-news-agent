@@ -101,7 +101,7 @@ def save_selection(conn, project_id: str, candidate_ids: list[str], version: int
     return {"selection": selection, "version": saved["version"]}
 
 
-def start_deep_research(conn, project_id: str, version: int) -> dict:
+def start_deep_research(conn, project_id: str, version: int, audience_note: str | None = None) -> dict:
     project = repo.get_project(conn, project_id)
     _require_stage(project, "selecting")
     _require_version(project["version"], version)
@@ -110,7 +110,7 @@ def start_deep_research(conn, project_id: str, version: int) -> dict:
     if not 1 <= count <= config.MAX_SELECTION:
         raise AppError("STAGE_CONFLICT", "후보를 1~3개 고른 뒤에 진행할 수 있어요.",
                        {"selected": count})
-    _, run = _start_run(conn, project, "deep_research", {})
+    _, run = _start_run(conn, project, "deep_research", {"audienceNote": audience_note})
     return {"runId": run["id"], "status": run["status"]}
 
 

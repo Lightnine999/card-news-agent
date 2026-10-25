@@ -93,6 +93,9 @@ def _note(candidate: dict) -> dict:
         "conflicts": [],
         "primarySources": [url],
         "unreachable": [],
+        "claims": [{"text": f"{candidate['title']}: 발표 주체가 주장한 모의 수치예요.", "sourceUrls": [url]}],
+        "officialDate": candidate.get("publishedAt"),
+        "officialDateSource": url,
     }
 
 
@@ -114,6 +117,11 @@ def _deep_research(ctx: RunContext, task: dict) -> EngineEvent:
         _pause(ctx, f"원문 확인 중: {cand['title']}")
         notes.append(_note(cand))
     _pause(ctx, "독자와 편집 방향 판단 중")
+    if task.get("audienceNote"):  # 독자 메모가 있으면 묻지 않고 그 독자로 정해요
+        data = _editorial_and_storyboard(task, task["audienceNote"])
+        data = {**data, "editorial": {**data["editorial"], "decidedBy": "ai_recommendation"}}
+        return EngineEvent(type="result", data=data, partial={"researchNotes": notes},
+                           session_id=ctx.session_id or f"mock-{ctx.project_id}")
     return EngineEvent(type="need_input", question=_audience_question(),
                        partial={"researchNotes": notes},
                        session_id=ctx.session_id or f"mock-{ctx.project_id}")
@@ -147,7 +155,13 @@ def _editorial_and_storyboard(task: dict, audience: str) -> dict:
         "editorial": {
             "audience": audience,
             "whyUseful": f"{audience}가 이번 주 변화를 5분 안에 파악할 수 있어요. (모의)",
-            "format": "핵심 요약형",
+            "format": "이야기형",
+            "formatComparison": [
+                {"format": "list", "fitsReader": "빠르게 훑는 독자에게 맞아요. (모의)", "pros": "한 장에 소식 하나", "cons": "맥락 설명이 적어요"},
+                {"format": "story", "fitsReader": "처음 접하는 독자에게 맞아요. (모의)", "pros": "변화의 의미가 보여요", "cons": "장수가 늘어요"}],
+            "recommendedFormat": "story",
+            "formatReason": "변화의 의미를 순서대로 보여 주려고요. (모의)",
+            "latestBasis": "",
             "hooks": ["[모의] 이번 주 꼭 알아 둘 AI 변화 3가지",
                       "[모의] 발표와 출시, 무엇이 진짜 바뀌었나",
                       "[모의] 오늘 바로 써 볼 수 있는 것만 골랐어요"],

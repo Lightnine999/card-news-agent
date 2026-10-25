@@ -87,6 +87,27 @@ CARD_RULES = """스토리보드(cards) 규칙:
 - 후킹 문구(hooks)는 2~3개, 확인된 사실 범위 안에서만 써요."""
 
 
+FORMAT_RULES = """카드 형식 규칙 (DECISIONS D14):
+- 두 형식을 가설로 두고 비교해요.
+  · 목록형(list): 이번 주 AI 소식을 빠르게 훑고 싶은 독자에게 맞아요. 발표 하나를 한 장에 짧게 담을 수 있어서예요.
+  · 이야기형(story): AI를 처음 접해 변화의 의미가 궁금한 독자에게 맞아요. 상황 → 불편 → 변화 → 활용 → 한계 순서로 이해하기 쉬워서예요.
+- editorial.formatComparison에 두 형식을 모두 넣고(fitsReader·pros·cons), 조사 결과와 독자에 비추어
+  recommendedFormat 하나와 formatReason을 적어요. editorial.format에는 고른 형식 이름을 한국어로 적어요.
+- cards는 추천한 형식의 순서를 따라요. 이야기형이면 상황 → 불편 → 변화 → 활용 → 한계 흐름이 보이게 카드를 놓아요.
+- 제목(title)·후킹 문구에 '최신'을 쓰려면 조사 기준일과 1차 자료로 확인한 공식 발표일(officialDate)로 뒷받침돼야 해요.
+  썼다면 latestBasis에 그 근거를 적고, 뒷받침이 없으면 '최신'을 쓰지 않아요(latestBasis는 빈 값).
+- 확인하지 않은 기능이나 효과는 후킹 문구에 넣지 않아요."""
+
+
+NOTE_RULES = """조사 기록(researchNotes) 규칙:
+- facts: 1차 자료나 기사로 확인한 사실이에요. 무엇이 바뀌었는지(변화)와 사용 조건(누가·어느 나라에서·얼마에·
+  어떤 범위로·언제부터 쓸 수 있는지)을 꼭 담아요. 기사로만 확인했으면 "OO 보도에 따르면"을 붙여요.
+- claims: 발표 주체가 스스로 주장한 것(성능·사용자 수·효과·계획 등)이에요. 독립 검증 전이라 facts와 따로 둬요.
+- limits: 아직 확인하지 못한 내용이에요(1차 자료 미확인, 조건 미공개, 자료끼리 다름 등).
+- officialDate: 1차 자료(발표 주체의 공식 글)를 WebFetch로 열어 확인한 공식 발표 날짜(YYYY-MM-DD)예요.
+  열어 확인하지 못했으면 null로 두고 limits에 "공식 발표 날짜 미확인"을 적어요. officialDateSource에는 그 1차 자료 URL을 적어요."""
+
+
 FORCED_QUESTION = """
 [확인용] 이번 실행은 질문 경로를 확인하려는 거예요. researchNotes를 만든 뒤 반드시 status=need_input으로
 독자 질문 하나를 돌려줘요. 이때 editorial·cards는 비워요."""
@@ -94,7 +115,11 @@ FORCED_QUESTION = """
 
 def deep_research(task: dict) -> str:
     forced = FORCED_QUESTION if config.test_ask_question() else ""
+    note = task.get("audienceNote")
+    reader = (f"\n{_quoted('독자 메모', note)}\n독자 메모가 있으면 그 독자를 기준으로 판단하고 독자를 묻는 질문은 하지 않아요.\n"
+              if note else "")
     return f"""{_quoted("조사 주제", task["topic"])}
+{reader}
 
 사용자가 고른 후보예요 (id는 그대로 돌려줘요):
 {_candidate_lines(task["candidates"])}
@@ -113,6 +138,10 @@ def deep_research(task: dict) -> str:
    allowFreeText=true, recommendedOptionId와 recommendationReason을 채워요. 이때 editorial·cards는 비워요.
 5. 지금 정보로 충분히 판단할 수 있으면 status=result로 researchNotes, editorial(decidedBy=ai_recommendation), cards를 돌려줘요.
 {forced}
+{NOTE_RULES}
+
+{FORMAT_RULES}
+
 {CARD_RULES}"""
 
 
@@ -133,6 +162,8 @@ def answer(task: dict, question: dict, answer_value: dict) -> str:
 이 답변을 반영해 editorial(decidedBy=user_answer)과 cards를 만들어 status=result로 돌려줘요.
 조사 기록은 아래와 같아요. 이 기록 밖의 사실은 쓰지 않아요.
 {notes}
+
+{FORMAT_RULES}
 
 {CARD_RULES}"""
 

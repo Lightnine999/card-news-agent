@@ -177,7 +177,10 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
   "limits": ["..."],
   "conflicts": [ { "text": "A는 X라고, B는 Y라고 함", "sourceUrls": ["...", "..."] } ],
   "primarySources": ["공식 발표·논문·문서 URL"],
-  "unreachable": [ { "url": "...", "reason": "접근 실패" } ]
+  "unreachable": [ { "url": "...", "reason": "접근 실패" } ],
+  "claims": [ { "text": "발표 주체가 스스로 주장한 것(성능·수치·효과·계획)", "sourceUrls": ["..."] } ],
+  "officialDate": "2026-10-21 | null",
+  "officialDateSource": "그 날짜를 확인한 1차 자료 URL | null"
 }
 ```
 
@@ -277,7 +280,7 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 | 3 | `POST /api/projects/{id}/research` | `requestId`, `periodDays?` | `202 { runId, status }` | 필수 |
 | 4 | `GET /api/projects/{id}` | 없음 | `200` Project 전체 | – |
 | 5 | `POST /api/projects/{id}/selection` | `candidateIds`(0~3개), `version` | `200 { selection, version }` | – (덮어쓰기라 반복해도 안전) |
-| 6 | `POST /api/projects/{id}/deep-research` **[추가]** | `version`, `requestId` | `202 { runId }` | 필수 |
+| 6 | `POST /api/projects/{id}/deep-research` **[추가]** | `version`, `requestId`, `audienceNote?`(200자) | `202 { runId }` | 필수 |
 | 7 | `POST /api/projects/{id}/answers` | `questionId`, `version`, `answer`, `requestId` | `202 { accepted: true, runId, status }` | 필수 |
 | 8 | `POST /api/projects/{id}/storyboard/feedback` **[추가]** | `instruction`, `version`, `requestId` | `202 { runId }` | 필수 |
 | 9 | `POST /api/projects/{id}/approve` | `stage`(`storyboard`/`final`), `version`, `requestId` | storyboard: `202 { runId }` / final: `200 { finalApproval }` | 필수 |
@@ -300,7 +303,7 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 
 **5. 선택 저장** — 체크할 때마다 저장해서 새로고침해도 남아요. 0~3개 허용(체크 해제 중간 상태 때문에), 제작 진행에는 1~3개가 필요해요. `stage`가 `selecting`일 때만 받아요.
 
-**6. 심층 조사 시작** — 저장된 선택이 1~3개일 때만 받아요. 선택한 후보만 조사해요. 끝나면 편집 판단(`editing`)으로 자동으로 이어지고, 필요하면 독자 질문을 내요. 질문이 필요 없으면 추천 이유를 `editorial.decidedBy = ai_recommendation`으로 남기고 스토리보드까지 만들어요.
+**6. 심층 조사 시작** — `audienceNote`(독자 메모, 예: "AI를 처음 접하는 대학생")를 주면 엔진은 그 독자로 판단하고 독자를 묻지 않아요(D20). 조사 기록은 확인한 사실(`facts`, 변화·사용 조건 포함) / 발표 주체의 주장(`claims`) / 아직 확인하지 못한 내용(`limits`)으로 나누고, 1차 자료로 확인한 공식 발표 날짜(`officialDate`)를 따로 남겨요. 편집 제안에는 목록형·이야기형 비교(`formatComparison`), `recommendedFormat`, `formatReason`, 제목 '최신'의 근거(`latestBasis`)가 들어가요(D14). 저장된 선택이 1~3개일 때만 받아요. 선택한 후보만 조사해요. 끝나면 편집 판단(`editing`)으로 자동으로 이어지고, 필요하면 독자 질문을 내요. 질문이 필요 없으면 추천 이유를 `editorial.decidedBy = ai_recommendation`으로 남기고 스토리보드까지 만들어요.
 
 **7. 답변** — 처리 순서:
 1. `questionId`·`version`이 `currentQuestion`과 같고 `status=open`인지 확인 → 아니면 `QUESTION_STALE`.

@@ -309,3 +309,25 @@ def test_verify_files_are_downloadable_and_in_zip(app_client):
     zip_url = next(f["url"] for f in view["files"] if f["name"].endswith(".zip"))
     with zipfile.ZipFile(io.BytesIO(app_client.get(zip_url).content)) as zf:
         assert "verify.md" in zf.namelist()
+
+
+def test_date_without_official_date_needs_check():
+    from cardnews import sources
+
+    url = "https://news.example.com/a"
+    index = {sources.normalize(url): {"publishedAt": "2026-10-21", "opened": False, "candidateId": "cand_3"}}
+    item = _date_item("보도에 따르면 공개됐어요", urls=[url], index=index)
+    assert item["status"] == "needs_check" and "공식 발표 날짜" in item["detail"]
+
+
+def test_date_with_official_date_passes():
+    from cardnews import sources, verify_export
+
+    url = "https://deepmind.example.com/blog"
+    index = {sources.normalize(url): {"publishedAt": "2026-10-22", "opened": True, "candidateId": "cand_7"}}
+    data = {"research": {"candidates": [], "requestedAt": "x",
+                         "period": {"from": "2026-10-18T12:00:00+09:00", "to": "2026-10-25T12:00:00+09:00"}},
+            "researchNotes": [{"candidateId": "cand_7", "facts": [], "limits": [], "officialDate": "2026-10-22"}]}
+    plan = {"order": 6, "role": "body", "title": "t", "keyLine": "지도를 공개했어요", "body": "", "sourceUrls": [url]}
+    item = verify_export._dates(plan, {}, index, data, verify_export._evidence_dates(data))
+    assert item["status"] == "pass" and "공식 발표일 2026-10-22" in item["detail"]

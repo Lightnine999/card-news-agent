@@ -214,6 +214,8 @@ export function selectingView(p, ui) {
         ${btn('research', '다시 조사', ui, { cls: 'ghost' })}</div>
       ${excludedView(p.research?.excluded)}
       <div class="cands">${cands.map((c) => candidateView(c, ui)).join('')}</div>
+      <label class="field">독자 메모 <span class="muted small">(선택, 200자까지. 적으면 독자를 따로 묻지 않고 이 독자로 판단해요)</span>
+        <input data-draft="audienceNote" maxlength="200" placeholder="예: AI를 처음 접하는 대학생" value="${esc(ui.drafts.audienceNote || '')}"></label>
     </section>
     <div class="sticky">
       <span>${count}개 골랐어요</span>
@@ -230,8 +232,10 @@ export function notesView(p) {
   const list = (items, fn) => (items.length ? `<ul>${items.map(fn).join('')}</ul>` : '<p class="muted">없음</p>');
   const notes = p.researchNotes.map((n) => `
     <details class="note"><summary>${esc(titles[n.candidateId] || n.candidateId)}</summary>
-      <h4>확인된 사실</h4>${list(n.facts, (f) => `<li>${esc(f.text)} ${links(f.sourceUrls)}</li>`)}
-      <h4>한계</h4>${list(n.limits, (t) => `<li>${esc(t)}</li>`)}
+      <p class="small">공식 발표 날짜: ${n.officialDate ? `<b>${esc(n.officialDate)}</b> ${n.officialDateSource ? links([n.officialDateSource]) : ''}` : '<b class="warn-text">미확인</b>'}</p>
+      <h4>확인한 사실 (변화·사용 조건)</h4>${list(n.facts, (f) => `<li>${esc(f.text)} ${links(f.sourceUrls)}</li>`)}
+      <h4>발표 주체의 주장</h4>${list(n.claims || [], (f) => `<li>${esc(f.text)} ${links(f.sourceUrls)}</li>`)}
+      <h4>아직 확인하지 못한 내용</h4>${list(n.limits, (t) => `<li>${esc(t)}</li>`)}
       <h4>서로 다른 내용</h4>${list(n.conflicts, (c) => `<li>${esc(c.text)} ${links(c.sourceUrls)}</li>`)}
       <h4>열지 못한 원문</h4>${list(n.unreachable, (u) => `<li>${esc(u.url)} — ${esc(u.reason)}</li>`)}
     </details>`).join('');
@@ -239,6 +243,19 @@ export function notesView(p) {
 }
 
 // --- 편집 제안 + 스토리보드 (S5) -------------------------------------------------
+
+const FORMAT_LABEL = { list: '목록형', story: '이야기형' };
+
+function formatCompare(e) {
+  if (!e.formatComparison?.length) return '';
+  const rows = e.formatComparison.map((o) => `
+    <tr class="${o.format === e.recommendedFormat ? 'pick' : ''}"><td><b>${FORMAT_LABEL[o.format] || esc(o.format)}</b>${o.format === e.recommendedFormat ? ' ⭐추천' : ''}</td>
+      <td>${esc(o.fitsReader)}</td><td>${esc(o.pros)}</td><td>${esc(o.cons)}</td></tr>`).join('');
+  return `<div class="table-wrap"><table class="verify"><thead><tr><th>형식</th><th>이 독자에게</th><th>좋은 점</th><th>아쉬운 점</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    ${e.formatReason ? `<p class="small">추천 이유: ${esc(e.formatReason)}</p>` : ''}
+    <p class="small muted">${e.latestBasis ? `'최신' 근거: ${esc(e.latestBasis)}` : "제목에 '최신'을 쓰지 않았어요(근거가 없으면 쓰지 않아요)."}</p>`;
+}
 
 export function storyboardView(p, ui) {
   const e = p.editorial;
@@ -260,7 +277,7 @@ export function storyboardView(p, ui) {
       <dl class="editorial">
         <dt>독자</dt><dd>${esc(e.audience)}</dd>
         <dt>유용한 이유</dt><dd>${esc(e.whyUseful)}</dd>
-        <dt>형식</dt><dd>${esc(e.format)}</dd>
+        <dt>형식</dt><dd>${esc(e.format)}${formatCompare(e)}</dd>
         <dt>후킹 문구</dt><dd><ul>${e.hooks.map((h) => `<li>${esc(h)}</li>`).join('')}</ul></dd>
       </dl>
     </section>

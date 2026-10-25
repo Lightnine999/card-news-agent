@@ -85,7 +85,8 @@ def _task(run: dict, project: dict) -> dict:
                 "requestedAt": run["payload"]["requestedAt"]}
     return {**base, "candidates": candidates, "researchNotes": data["researchNotes"],
             "editorial": data["editorial"], "storyboard": data["storyboard"],
-            "instruction": run["payload"].get("instruction")}
+            "instruction": run["payload"].get("instruction"),
+            "audienceNote": run["payload"].get("audienceNote")}
 
 
 def _execute_images(run: dict, project: dict) -> None:

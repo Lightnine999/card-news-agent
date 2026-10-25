@@ -63,11 +63,14 @@ class UnreachableOut(BaseModel):
 
 class NoteOut(BaseModel):
     candidateId: str
-    facts: list[FactOut]
-    limits: list[str]
+    facts: list[FactOut]          # 원문으로 확인한 사실(변화·사용 조건 포함)
+    limits: list[str]             # 아직 확인하지 못한 내용·한계
     conflicts: list[FactOut]
     primarySources: list[str]
     unreachable: list[UnreachableOut]
+    claims: list[FactOut] = []    # 발표 주체가 스스로 주장한 것(수치·효과 등, 독립 검증 전)
+    officialDate: str | None = None        # 공식 발표 날짜(YYYY-MM-DD, 1차 자료에서 확인한 것만)
+    officialDateSource: str | None = None  # 그 날짜를 확인한 1차 자료 URL
 
 
 class OptionOut(BaseModel):
@@ -85,12 +88,23 @@ class QuestionOut(BaseModel):
     recommendationReason: str
 
 
+class FormatOptionOut(BaseModel):
+    format: Literal["list", "story"]
+    fitsReader: str   # 이 독자에게 맞는지 한 줄
+    pros: str
+    cons: str
+
+
 class EditorialOut(BaseModel):
     audience: str
     whyUseful: str
     format: str
     hooks: list[str]
     decidedBy: Literal["ai_recommendation", "user_answer"]
+    formatComparison: list[FormatOptionOut] = []   # 목록형·이야기형 비교 (D14)
+    recommendedFormat: Literal["list", "story"] | None = None
+    formatReason: str = ""
+    latestBasis: str = ""  # 제목에 '최신'을 썼다면 그 근거(조사 기준일·공식 발표일), 안 썼으면 빈 값
 
 
 class ImagePlanOut(BaseModel):
@@ -200,6 +214,9 @@ def to_notes(notes: list[NoteOut], selected: set[str]) -> list[dict]:
                           for c in note.conflicts],
             "primarySources": safe_urls(note.primarySources),
             "unreachable": [u.model_dump() for u in note.unreachable],
+            "claims": [{"text": c.text, "sourceUrls": safe_urls(c.sourceUrls)} for c in note.claims],
+            "officialDate": safe_date(note.officialDate),
+            "officialDateSource": safe_url(note.officialDateSource) if note.officialDateSource else None,
         })
     return clean
 

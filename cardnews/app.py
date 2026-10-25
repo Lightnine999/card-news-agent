@@ -157,6 +157,10 @@ class Revision(BaseModel):
         return value.strip()
 
 
+class DeepResearch(Versioned):
+    audienceNote: str | None = Field(default=None, max_length=200)  # 예: AI를 처음 접하는 대학생
+
+
 class Resume(BaseModel):
     mode: Literal["continue", "restart"]
     requestId: str = request_id()
@@ -219,9 +223,11 @@ def save_selection(project_id: str, req: Selection):
 
 
 @app.post("/api/projects/{project_id}/deep-research")
-def start_deep_research(project_id: str, req: Versioned):
+def start_deep_research(project_id: str, req: DeepResearch):
+    note = (req.audienceNote or "").strip() or None
+
     def action(conn):
-        return 202, service.start_deep_research(conn, project_id, req.version)
+        return 202, service.start_deep_research(conn, project_id, req.version, note)
 
     return _respond(service.idempotent(project_id, req.requestId, "deep-research",
                                        _body(req), action))

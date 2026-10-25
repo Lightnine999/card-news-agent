@@ -113,7 +113,8 @@ const actions = {
   research: () => act('research', (rid) => post(`${base()}/research`, { requestId: rid })),
   deep: () => act('deep', async (rid) => {
     await saveChain;  // 저장 중인 선택이 끝난 뒤에 보내요
-    await post(`${base()}/deep-research`, { version: project.version, requestId: rid });
+    const audienceNote = (ui.drafts.audienceNote || '').trim() || null;
+    await post(`${base()}/deep-research`, { version: project.version, requestId: rid, audienceNote });
   }),
   cancel: (el) => act('cancel', () => post(`/api/runs/${el.dataset.run}/cancel`)),
   'resume-restart': (el) => act('resume-restart', (rid) => post(`/api/runs/${el.dataset.run}/resume`, { mode: 'restart', requestId: rid })),
@@ -237,7 +238,7 @@ $app.addEventListener('input', (event) => {
   const el = event.target;
   if (el.dataset.draft && el.type !== 'radio') {
     ui.drafts[el.dataset.draft] = el.value;
-    if (el.dataset.draft.startsWith('layout:')) return;  // 글자 조정 입력은 적용 버튼으로 보내요
+    if (el.dataset.draft.startsWith('layout:') || el.dataset.draft === 'audienceNote') return;  // 버튼을 누를 때 보내요
     if (el.dataset.draft === 'revise:instruction') {
       const button = $app.querySelector('[data-action="revise"]');
       if (button && !ui.pending.has('revise')) button.disabled = !(el.value.trim() && ui.reviseCards.size && !project.activeRun);

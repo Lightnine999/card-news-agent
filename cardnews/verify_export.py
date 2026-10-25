@@ -187,8 +187,19 @@ def _dates(plan: dict, card: dict, index: dict, data: dict, evidence: tuple) -> 
     period = research["period"]
     years = {int(period["from"][:4]), int(period["to"][:4])}
     fails, checks, confirmed = [], [], []
+    official = {n.get("candidateId"): n.get("officialDate") for n in data.get("researchNotes") or []}
+    seen = set()
     for url in plan.get("sourceUrls", []):
         info = index.get(sources.normalize(url))
+        cid = (info or {}).get("candidateId")
+        if cid and cid not in seen:  # 기사 게시일과 따로, 1차 자료로 확인한 공식 발표일이 있는지 봐요
+            seen.add(cid)
+            if not official.get(cid):
+                checks.append(f"공식 발표 날짜를 1차 자료로 확인하지 못했어요(기사 게시일 {info['publishedAt'] or '미확인'}만 있어요): {info.get('candidate') or url}")
+            elif not _in_period(official[cid], period):
+                fails.append(f"공식 발표일 {official[cid]}이 조사 기간 밖이에요: {info.get('candidate') or url}")
+            else:
+                confirmed.append(f"공식 발표일 {official[cid]}")
         if not info:
             checks.append(f"조사 기록에 없는 근거라 게시일을 확인하지 못했어요: {url}")
         elif not info["publishedAt"]:
