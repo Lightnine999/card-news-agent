@@ -259,7 +259,7 @@ def test_unknown_source_date_is_not_pass():
 
 
 @pytest.mark.parametrize("text", ["10/24 출시", "2026.10.24 발표", "2026-10-24 공개", "10월 23~25일 행사",
-                                  "10월 말 출시", "다음 달 1일", "올해 3분기"])
+                                  "10월 말 출시", "다음 달 1일", "올해 3분기", "10월 셋째 주 소식"])
 def test_other_date_forms_need_check(text):
     item = _date_item(text)
     assert item["status"] == "needs_check", item
@@ -331,3 +331,26 @@ def test_date_with_official_date_passes():
     plan = {"order": 6, "role": "body", "title": "t", "keyLine": "지도를 공개했어요", "body": "", "sourceUrls": [url]}
     item = verify_export._dates(plan, {}, index, data, verify_export._evidence_dates(data))
     assert item["status"] == "pass" and "공식 발표일 2026-10-22" in item["detail"]
+
+
+def test_primary_source_from_deep_research_uses_official_date():
+    from cardnews import export, sources
+
+    url = "https://cloud.example.com/blog/openai-models"
+    data = {"research": {"candidates": [{"id": "cand_9", "title": "OpenAI 모델, Google Cloud로", "publishedAt": "2026-10-21",
+                                         "eventDate": None, "sources": [{"url": "https://news.example.com/a", "type": "press"}]}]},
+            "openedUrls": [url],
+            "researchNotes": [{"candidateId": "cand_9", "primarySources": [url],
+                               "officialDate": "2026-10-22", "officialDateSource": url}]}
+    info = export.source_index(data)[sources.normalize(url)]
+    assert info["publishedAt"] == "2026-10-22" and info["candidateId"] == "cand_9"
+    assert info["type"] == "official" and info["opened"] is True and info["candidate"] == "OpenAI 모델, Google Cloud로"
+
+
+def test_week_expression_needs_check_even_when_other_dates_match():
+    from cardnews import sources
+
+    url = "https://a.example.com/x"
+    index = {sources.normalize(url): {"publishedAt": "2026-10-22", "opened": True}}
+    item = _date_item("10월 셋째 주, 10월 22일 발표", urls=[url], index=index)
+    assert item["status"] == "needs_check" and "셋째 주" in item["detail"]

@@ -32,13 +32,18 @@ def source_index(data: dict) -> dict[str, dict]:
                 "url": src["url"], "name": src.get("name") or src["url"], "type": src.get("type", "unknown"),
                 "publishedAt": cand.get("publishedAt"), "eventDate": cand.get("eventDate"),
                 "candidate": cand["title"], "candidateId": cand["id"], "opened": src["opened"]})
+    titles = {c["id"]: c["title"] for c in research.get("candidates", [])}
+    opened_all = {sources.normalize(u) for u in data.get("openedUrls", [])}
     for note in data.get("researchNotes") or []:  # 심층 조사에서 따로 찾은 공식 자료
+        dated = sources.normalize(note["officialDateSource"]) if note.get("officialDateSource") else None
         for url in note.get("primarySources", []):
             key = sources.normalize(url)
             if key not in index:
-                opened = key in {sources.normalize(u) for u in data.get("openedUrls", [])}
-                index[key] = {"url": url, "name": url, "type": "unknown", "publishedAt": None,
-                              "eventDate": None, "candidate": None, "opened": opened}
+                # 그 1차 자료에서 확인한 공식 발표일을 게시일로 써요 (없으면 미확인)
+                index[key] = {"url": url, "name": url, "type": "official",
+                              "publishedAt": note.get("officialDate") if key == dated else None,
+                              "eventDate": None, "candidate": titles.get(note.get("candidateId")),
+                              "candidateId": note.get("candidateId"), "opened": key in opened_all}
     return index
 
 
