@@ -82,6 +82,39 @@ def fetch(tid: str, url: str, code: int, final: str | None = None) -> None:
         "tool_use_result": {"code": code, "codeText": "", "url": final or url}})
 
 
+def support_candidate(n: int, url_type: str = "official", status: str = "confirmed", deadline=None) -> dict:
+    return {"title": f"공고 {n}", "summary": "요약", "kind": "공모전", "host": "주최", "hostType": "gov",
+            "target": "대학생", "amountText": f"상금 {n}천만 원", "amountKRW": n * 10_000_000,
+            "dateStatus": status, "deadline": deadline, "deadlineTime": None, "rollingText": None,
+            "openMonth": None, "basis": "", "whyPick": "이유", "uncertainty": "불확실",
+            "sources": [{"url": f"https://gov.example.go.kr/notice/{n}", "name": f"공고 {n}", "type": url_type}]}
+
+
+def support_research(prompt: str) -> dict:
+    soon = (requested_date(prompt) + timedelta(days=10)).isoformat()
+    cands = [support_candidate(n, deadline=soon) for n in range(1, 5)]
+    blog = {**support_candidate(9, "blog", deadline=soon), "title": "모음 사이트에만 있는 공고"}
+    return {"status": "result", "candidates": [*cands, blog]}
+
+
+def support_deep(prompt: str) -> dict:
+    ids = [line.split("id=")[1].split()[0] for line in prompt.splitlines() if line.startswith("- id=")]
+    soon = (date.today() + timedelta(days=10)).isoformat()
+    notes = [{"candidateId": cid, "facts": [], "limits": [], "conflicts": [],
+              "primarySources": [f"https://gov.example.go.kr/notice/{cid[5:]}"], "unreachable": [],
+              "notice": {"target": "대학생", "applyVia": "주최", "amountText": "상금 1천만 원", "amountKRW": 10_000_000,
+                         "dateStatus": "confirmed", "deadline": soon, "deadlineTime": None, "rollingText": None,
+                         "openMonth": None, "basis": "", "officialUrl": f"https://gov.example.go.kr/notice/{cid[5:]}",
+                         "prepare": "포트폴리오"}} for cid in ids]
+    plan = {"kind": "generated", "prompt": "배경", "textArea": "top"}
+    card = lambda role, cid: {"role": role, "title": "t", "keyLine": "k", "body": "엔진이 쓴 D-1", "imageRole": "r",  # noqa: E731
+                              "sourceUrls": [], "imagePlan": plan, "candidateId": cid}
+    cards = [card("cover", None), *[card("body", cid) for cid in ids], card("summary", None)]
+    editorial = {"audience": "대학생·예비 창업자", "whyUseful": "유용", "format": "공고 카드형", "hooks": ["h"],
+                 "decidedBy": "ai_recommendation"}
+    return {"status": "result", "researchNotes": notes, "editorial": editorial, "cards": cards}
+
+
 def main() -> None:
     args = sys.argv[1:]
     with open(os.environ["FAKE_CLAUDE_LOG"], "a", encoding="utf-8") as log:
@@ -117,6 +150,10 @@ def main() -> None:
                '<path d="M0 1200 L1080 900 L1080 1350 Z" fill="#264653"/><text x="40" y="80">글자</text>'
                '<script>alert(1)</script></svg>')
         out = {"svg": "그림을 그리지 못했어요" if scenario == "svg_bad" else svg}
+    elif kind == "SupportResearchOutput":
+        out = support_research(prompt)
+    elif kind == "SupportDeepOutput":
+        out = support_deep(prompt)
     elif kind == "ResearchOutput":
         fetch("f1", "https://www.news.example.com/1/", 200)   # 주소 모양이 달라도 같은 페이지
         fetch("f2", "https://news.example.com/2", 403)        # 막힌 페이지는 연 것이 아니에요

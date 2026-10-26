@@ -48,8 +48,18 @@ def source_index(data: dict) -> dict[str, dict]:
 
 
 def _texts(plan: dict, card: dict) -> dict:
+    rendered = (card.get("render") or {}).get("texts")
+    if rendered:  # PNG에 실제로 올린 글자(공고 카드는 렌더링한 날 기준 D-day가 들어 있어요)
+        return rendered
     layout = card.get("layout") or {}
     return {k: layout.get(k) if layout.get(k) is not None else plan.get(k) for k in ("title", "keyLine", "body")}
+
+
+def _period_line(research: dict) -> str:
+    period = research["period"]
+    if "months" in period:
+        return f"- 조사 범위: 오늘부터 {period['months']}개월 ({period['from'][:10]} ~ {period['to'][:10]})"
+    return f"- 조사 기간: 최근 {period['days']}일 ({period['from'][:10]} ~ {period['to'][:10]})"
 
 
 def sources_md(project: dict, version: int) -> str:
@@ -59,7 +69,7 @@ def sources_md(project: dict, version: int) -> str:
     cards = {c["cardId"]: c for c in data["result"]["cards"]}
     lines = [f"# 출처 기록 — {project['topic']}", "",
              f"- 조사 기준 시각: {research['requestedAt']}",
-             f"- 조사 기간: 최근 {research['period']['days']}일 ({research['period']['from'][:10]} ~ {research['period']['to'][:10]})",
+             _period_line(research),
              f"- 결과 버전: v{version} · 최종 승인: {data['finalApproval']['approvedAt']}",
              "- '엔진이 열어 봄'은 조사 엔진이 그 주소를 실제로 열어 내용을 받았다는 뜻이에요. 지금도 열리는지는 확인하지 않았어요.", ""]
     for plan in data["storyboard"]["cards"]:
@@ -72,6 +82,12 @@ def sources_md(project: dict, version: int) -> str:
         if texts.get("body") and plan["role"] != "cover":
             lines.append(f"- 본문: {texts['body']}")
         lines.append(f"- 문구: {'스토리보드에서 고쳤어요 (' + card['revisionNote'] + ')' if card.get('revisionNote') else '스토리보드에서 고쳤어요' if edited else '스토리보드 그대로'}")
+        notice = plan.get("notice")
+        if notice:  # 지원사업·공모전 공고 카드
+            when = notice.get("deadline") or notice.get("openMonth") or notice.get("rollingText") or "미확인"
+            lines += [f"- 마감: {when} ({notice['dateStatus']}){' · 근거: ' + notice['basis'] if notice.get('basis') else ''}",
+                      f"- 금액: {notice.get('amountText') or '확인 필요'} · 신청: {notice.get('applyVia')}",
+                      f"- 공식 공고문: {notice['officialUrl'] if notice.get('officialUrl') and sources.normalize(notice['officialUrl']) in index else '미확인'}"]
         urls = plan.get("sourceUrls", [])
         if not urls:
             lines.append("- 근거: 없음")

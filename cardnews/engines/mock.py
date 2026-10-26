@@ -171,11 +171,110 @@ def _editorial_and_storyboard(task: dict, audience: str) -> dict:
     }
 
 
+# --- 지원사업·공모전 모의 데이터 (SUPPORT_PRD) ----------------------------------------
+# (이름, 종류, 주최 규모, 금액(원), 금액 문구, 날짜 상태, 기준일에서 며칠 뒤 마감 / 몇 달 뒤 열림, 공식 출처 여부)
+_SUPPORT = [
+    ("청년 창업 지원사업", "지원사업", "gov", 100_000_000, "최대 1억 원 사업화 자금", "confirmed", 20, True),
+    ("AI 서비스 공모전", "공모전", "corp", 50_000_000, "총상금 5천만 원 · 대상 2천만 원", "confirmed", 35, True),
+    ("대학생 해커톤", "해커톤", "univ", 10_000_000, "총상금 1천만 원", "confirmed", 10, True),
+    ("콘텐츠 창업 바우처", "지원사업", "gov", 30_000_000, "최대 3천만 원 바우처", "rolling", None, True),
+    ("지역 아이디어 공모전", "공모전", "other", None, "", "confirmed", 50, True),
+    ("예비창업 지원 (예정)", "지원사업", "gov", 100_000_000, "최대 1억 원", "expected", 3, True),
+    ("글로벌 해커톤 (예정)", "해커톤", "corp", 20_000_000, "총상금 2천만 원", "expected", 2, True),
+    ("지난 창업 경진대회", "공모전", "gov", 5_000_000, "상금 500만 원", "confirmed", -3, True),
+    ("모음 사이트에만 있는 공고", "공모전", "other", 1_000_000, "상금 100만 원", "confirmed", 15, False),
+    ("날짜 미확인 지원사업", "지원사업", "gov", None, "", "unverified", None, True),
+    ("내년 가을 공모전", "공모전", "corp", 30_000_000, "상금 3천만 원", "confirmed", 220, True),
+]
+_FEW = {"청년 창업 지원사업", "예비창업 지원 (예정)", "지난 창업 경진대회", "날짜 미확인 지원사업"}
+
+
+def _support_candidate(index: int, sample: tuple, day) -> dict:
+    from cardnews import support
+
+    title, kind, host, amount, amount_text, status, offset, official = sample
+    deadline = (day + timedelta(days=offset)).isoformat() if status == "confirmed" else None
+    month = support.add_months(day, offset).isoformat()[:7] if status == "expected" else None
+    url = f"https://example.go.kr/mock/notice/{index}" if official else f"https://example.com/mock/list/{index}"
+    return {
+        "id": f"cand_{index}", "title": f"[모의] {title}", "kind": kind, "host": f"모의 {kind} 주최",
+        "hostType": host, "target": "만 39세 이하 예비 창업자" if kind == "지원사업" else "대학생·일반인",
+        "summary": "모의 데이터예요. 실제 공고가 아니에요.", "amountText": amount_text, "amountKRW": amount,
+        "dateStatus": status, "deadline": deadline, "deadlineTime": "18:00" if deadline else None,
+        "rollingText": "예산 소진 시 마감" if status == "rolling" else None, "openMonth": month,
+        "basis": "모의 연간 통합공고 기준" if status == "expected" else "",
+        "sources": [{"url": url, "name": f"모의 공고 {index}", "type": "official" if official else "blog"}],
+        "whyPick": "지원 규모가 커요. (모의)", "uncertainty": "모의 데이터라 실제 일정과 달라요.",
+    }
+
+
+def _support_research(ctx: RunContext, task: dict) -> EngineEvent:
+    _pause(ctx, f"'{task['topic']}' 공고를 공식 페이지에서 찾는 중")
+    day = datetime.fromisoformat(task["requestedAt"]).date()
+    few = "적음" in task["topic"] and not task.get("broaden")
+    samples = [s for s in _SUPPORT if not few or s[0] in _FEW]
+    candidates = [_support_candidate(i, s, day) for i, s in enumerate(samples, 1)]
+    return EngineEvent(type="result", data={"candidates": candidates},
+                       session_id=ctx.session_id or f"mock-{ctx.project_id}")
+
+
+def _support_note(cand: dict) -> dict:
+    url = cand["sources"][0]["url"]
+    fields = ("target", "amountText", "amountKRW", "dateStatus", "deadline", "deadlineTime", "rollingText",
+              "openMonth", "basis")
+    return {"candidateId": cand["id"],
+            "facts": [{"text": f"{cand['title']}: {cand['amountText'] or '금액 미공개'} (모의)", "sourceUrls": [url]}],
+            "limits": [], "conflicts": [], "primarySources": [url], "unreachable": [], "claims": [],
+            "officialDate": None, "officialDateSource": None,
+            "notice": {**{k: cand.get(k) for k in fields}, "applyVia": cand["host"], "officialUrl": url,
+                       "prepare": "사업계획서 초안 (모의)"}}
+
+
+def _support_cards(task: dict, note: str = "") -> list[dict]:
+    plan = {"kind": "generated", "textArea": "top", "prompt": "밝은 책상 위 서류철, 위쪽 40% 비움, 글자·로고 없음"}
+    base = {"imageRole": "분위기 잡기", "sourceUrls": [], "imagePlan": plan}
+    cards = [{**base, "role": "cover", "title": f"놓치면 아까운 공고{note}", "keyLine": "6개월 안에 지원할 곳",
+              "body": "", "candidateId": None}]
+    cards += [{**base, "role": "body", "title": c["title"][:30], "keyLine": "엔진이 쓴 금액", "body": "",
+               "candidateId": c["id"], "sourceUrls": [c["sources"][0]["url"]]} for c in task["candidates"]]
+    return [*cards, {**base, "role": "summary", "title": "마감순 정리", "keyLine": "", "body": "",
+                     "candidateId": None}]
+
+
+def _support_result(task: dict, notes: list[dict], note: str = "") -> dict:
+    from cardnews import support
+    from cardnews.util import now
+
+    final, dropped = support.finalize_cards(_support_cards(task, note), notes, task["candidates"], now().date())
+    return {"cards": final, "dropped": dropped}
+
+
+def _support(ctx: RunContext, task: dict) -> EngineEvent:
+    if task["kind"] == "research":
+        return _support_research(ctx, task)
+    if task["kind"] == "storyboard":
+        _pause(ctx, "변경 요청 반영 중")
+        return EngineEvent(type="result",
+                           data=_support_result(task, task["researchNotes"], f" (수정: {task['instruction'][:10]})"))
+    notes = []
+    for cand in task["candidates"]:
+        _pause(ctx, f"공식 공고문 확인 중: {cand['title']}")
+        notes.append(_support_note(cand))
+    editorial = {"audience": "대학생·예비 창업자", "whyUseful": "마감을 놓치지 않게 한눈에 봐요. (모의)",
+                 "format": "공고 카드형", "hooks": ["[모의] 6개월 안에 지원할 수 있는 공고"],
+                 "decidedBy": "ai_recommendation", "formatComparison": [], "recommendedFormat": None,
+                 "formatReason": "", "latestBasis": ""}
+    return EngineEvent(type="result", data={"editorial": editorial, **_support_result(task, notes)},
+                       partial={"researchNotes": notes}, session_id=ctx.session_id or f"mock-{ctx.project_id}")
+
+
 class MockEngine:
     name = "mock"
 
     def start(self, ctx: RunContext, task: dict) -> EngineEvent:
         kind = task["kind"]
+        if task.get("workflow") == "support" and kind in ("research", "deep_research", "storyboard"):
+            return _support(ctx, task)
         if kind == "research":
             return _research(ctx, task)
         if kind == "deep_research":

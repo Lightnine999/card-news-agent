@@ -10,8 +10,9 @@ from cardnews.util import new_id, now_iso
 ACTIVE_STATUSES = ("queued", "running", "waiting_for_user")
 
 
-def empty_data() -> dict:
+def empty_data(workflow: str = "news") -> dict:
     return {
+        "workflow": workflow,  # news: 최신 소식 / support: 지원사업·공모전 (없으면 news)
         "research": None,
         "selection": {"candidateIds": [], "savedAt": None},
         "researchNotes": [],
@@ -42,13 +43,13 @@ def _project_from_row(row: sqlite3.Row) -> dict:
     }
 
 
-def insert_project(conn, topic: str, engine_name: str) -> dict:
+def insert_project(conn, topic: str, engine_name: str, workflow: str = "news") -> dict:
     pid, ts = new_id("prj"), now_iso()
     conn.execute(
         "INSERT INTO projects (id, version, topic, stage, is_mock, engine_name, "
         "engine_session_id, data, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (pid, 1, topic, "created", int(engine_name == "mock"), engine_name, None,
-         json.dumps(empty_data(), ensure_ascii=False), ts, ts),
+         json.dumps(empty_data(workflow), ensure_ascii=False), ts, ts),
     )
     return get_project(conn, pid)
 

@@ -56,6 +56,7 @@ async def _validation_error(_: Request, err: RequestValidationError):
 
 class CreateProject(BaseModel):
     topic: str
+    workflow: Literal["news", "support"] = "news"  # 최신 소식 / 지원사업·공모전
     periodDays: Literal[7, 30] = 7
     requestId: str | None = request_id(default=None)
 
@@ -196,7 +197,7 @@ def list_projects():
 @app.post("/api/projects")
 def create_project(req: CreateProject):
     def action(conn):
-        return 201, {"projectId": service.create_project(conn, req.topic)["id"]}
+        return 201, {"projectId": service.create_project(conn, req.topic, req.workflow)["id"]}
 
     return _respond(service.idempotent("_global", req.requestId, "POST /api/projects",
                                        _body(req), action))

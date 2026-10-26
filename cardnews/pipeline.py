@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 
-from cardnews import config, period, questions, repo, sources
+from cardnews import config, period, questions, repo, sources, support
 from cardnews.engines.base import EngineEvent
 from cardnews.errors import AppError
 from cardnews.util import now_iso
@@ -72,6 +72,8 @@ def _apply_result(conn, project: dict, run: dict, result: dict) -> dict:
 
 def _apply_research(conn, project: dict, run: dict, result: dict) -> dict:
     payload = run["payload"]
+    if payload.get("workflow") == "support":
+        return _apply_support_research(conn, project, run, result)
     days = payload["periodDays"]
     to = datetime.fromisoformat(payload["requestedAt"])
     research = {
@@ -91,10 +93,28 @@ def _apply_research(conn, project: dict, run: dict, result: dict) -> dict:
     return {**project, "stage": "selecting"}
 
 
+def _apply_support_research(conn, project: dict, run: dict, result: dict) -> dict:
+    """지원사업·공모전: 오늘부터 6개월 안의 공고만 남기고 두 묶음으로 나눠요. 적으면 분야·지역을 넓힐지 물어요."""
+    payload = run["payload"]
+    requested = datetime.fromisoformat(payload["requestedAt"])
+    start, end = support.window(requested.date())
+    kept, excluded = support.split(result["candidates"], requested.date())
+    research = {"requestedAt": payload["requestedAt"], "workflow": "support",
+                "period": {"months": support.MONTHS, "from": payload["requestedAt"], "to": end.isoformat()},
+                "broadened": bool(payload.get("broaden")), "candidates": kept, "excluded": excluded}
+    project = {**project, "data": {**project["data"], "research": research}}
+    if len(kept) < support.EXPAND_THRESHOLD and not payload.get("broaden"):
+        return wait_for_user(conn, project, run, questions.broaden_question(len(kept)), "app")
+    finish_run(conn, run["id"], "succeeded")
+    return {**project, "stage": "selecting"}
+
+
 def _apply_storyboard(project: dict, result: dict) -> dict:
     data = project["data"]
     previous = data["storyboard"]["version"] if data["storyboard"] else 0
     storyboard = {"version": previous + 1, "cards": result["cards"], "approvedAt": None}
+    if "dropped" in result:  # 지원사업: 심층 확인에서 빠진 공고와 이유
+        storyboard = {**storyboard, "dropped": result["dropped"]}
     editorial = result.get("editorial", data["editorial"])
     return {**project, "stage": "storyboard_review",
             "data": {**data, "storyboard": storyboard, "editorial": editorial}}
@@ -103,6 +123,11 @@ def _apply_storyboard(project: dict, result: dict) -> dict:
 def answer_app_question(conn, project: dict, run: dict, question: dict,
                         answer: dict) -> dict:
     """앱이 직접 낸 질문(30일 확장)은 엔진을 부르지 않고 여기서 처리해요."""
+    if question["id"] == "q_broaden" and answer.get("optionId") == "broaden":
+        payload = {**run["payload"], "broaden": True, "phase": "start", "requestedAt": None}
+        repo.update_run(conn, run["id"], status="running", dispatch=True, payload=payload,
+                        questionId=None)
+        return project
     if question["id"] == "q_expand_period" and answer.get("optionId") == "expand":
         payload = {**run["payload"], "periodDays": 30, "phase": "start", "requestedAt": None}
         repo.update_run(conn, run["id"], status="running", dispatch=True, payload=payload,

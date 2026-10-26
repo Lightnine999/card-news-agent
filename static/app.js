@@ -182,7 +182,8 @@ const actions = {
     if (!form.reportValidity()) return;
     const topic = form.topic.value.trim();
     const periodDays = Number(form.periodDays.value);
-    const { projectId } = await post('/api/projects', { topic, periodDays, requestId: rid });
+    const workflow = form.workflow.value;
+    const { projectId } = await post('/api/projects', { topic, periodDays, workflow, requestId: rid });
     await post(`/api/projects/${projectId}/research`, { requestId: `${rid}-r`, periodDays });
     ui.drafts.topic = '';
     history.pushState({}, '', `/p/${projectId}`);
@@ -194,7 +195,7 @@ function toggleCandidate(input) {
   const id = input.dataset.candidate;
   const next = new Set(ui.selected);
   if (input.checked) next.add(id); else next.delete(id);
-  if (next.size > 3) { input.checked = false; flash('최대 3개까지 고를 수 있어요.'); return; }
+  if (next.size > project.maxSelection) { input.checked = false; flash(`최대 ${project.maxSelection}개까지 고를 수 있어요.`); return; }
   ui.selected = next;
   ui.saving = true;
   render();

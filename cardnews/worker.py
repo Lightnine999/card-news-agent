@@ -79,10 +79,10 @@ def _task(run: dict, project: dict) -> dict:
     data = project["data"]
     selected = set(data["selection"]["candidateIds"])
     candidates = [c for c in (data["research"] or {}).get("candidates", []) if c["id"] in selected]
-    base = {"kind": run["kind"], "topic": project["topic"]}
+    base = {"kind": run["kind"], "topic": project["topic"], "workflow": data.get("workflow") or "news"}
     if run["kind"] == "research":
         return {**base, "periodDays": run["payload"]["periodDays"],
-                "requestedAt": run["payload"]["requestedAt"]}
+                "requestedAt": run["payload"]["requestedAt"], "broaden": run["payload"].get("broaden", False)}
     return {**base, "candidates": candidates, "researchNotes": data["researchNotes"],
             "editorial": data["editorial"], "storyboard": data["storyboard"],
             "instruction": run["payload"].get("instruction"),

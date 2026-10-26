@@ -123,6 +123,75 @@ class CardOut(BaseModel):
     imagePlan: ImagePlanOut
 
 
+class SupportCardOut(CardOut):
+    candidateId: str | None  # 공고 카드면 그 공고의 후보 ID, 표지·요약이면 null
+
+
+# --- 지원사업·공모전 (SUPPORT_PRD) ------------------------------------------------------
+
+DateStatus = Literal["confirmed", "rolling", "expected", "unverified"]
+HostType = Literal["gov", "corp", "univ", "other"]
+
+
+class SupportCandidateOut(BaseModel):
+    title: str
+    summary: str
+    kind: Literal["지원사업", "공모전", "해커톤"]
+    host: str
+    hostType: HostType
+    target: str
+    amountText: str          # 금액·혜택 한 줄. 모르면 빈 값
+    amountKRW: int | None    # 비교용 현금성 최대 금액(원). 정해지지 않았으면 null
+    dateStatus: DateStatus
+    deadline: str | None     # YYYY-MM-DD
+    deadlineTime: str | None  # HH:MM
+    rollingText: str | None  # 상시 모집·예산 소진 시 마감 같은 문구
+    openMonth: str | None    # YYYY-MM (곧 열릴 예정)
+    basis: str               # 예정이면 그 근거(예: 2026년 통합공고 기준)
+    sources: list[SourceOut]
+    whyPick: str
+    uncertainty: str
+
+
+class SupportResearchOutput(BaseModel):
+    status: Literal["result", "error"]
+    candidates: list[SupportCandidateOut] = []
+    error: ErrorOut | None = None
+
+
+class NoticeOut(BaseModel):
+    target: str
+    applyVia: str            # 신청하는 곳(주최 기관 이름)
+    amountText: str
+    amountKRW: int | None
+    dateStatus: DateStatus
+    deadline: str | None
+    deadlineTime: str | None
+    rollingText: str | None
+    openMonth: str | None
+    basis: str
+    officialUrl: str | None  # 실제로 열어 확인한 공식 공고문 URL
+    prepare: str             # 미리 준비할 것 한 줄
+
+
+class SupportNoteOut(NoteOut):
+    notice: NoticeOut
+
+
+class SupportDeepOutput(BaseModel):
+    status: Literal["result", "error"]
+    researchNotes: list[SupportNoteOut] = []
+    editorial: EditorialOut | None = None
+    cards: list[SupportCardOut] = []
+    error: ErrorOut | None = None
+
+
+class SupportStoryboardOutput(BaseModel):
+    status: Literal["result", "error"]
+    cards: list[SupportCardOut] = []
+    error: ErrorOut | None = None
+
+
 class DeepResearchOutput(BaseModel):
     status: Literal["result", "need_input", "error"]
     researchNotes: list[NoteOut] = []
@@ -247,8 +316,8 @@ def allowed_urls(candidates: list[dict], notes: list[dict]) -> set[str]:
     return urls
 
 
-def to_cards(cards: list[CardOut], allowed: set[str]) -> list[dict]:
-    low, high = CARD_RANGE
+def to_cards(cards: list[CardOut], allowed: set[str], card_range: tuple[int, int] = CARD_RANGE) -> list[dict]:
+    low, high = card_range
     if not low <= len(cards) <= high:
         raise invalid(f"스토리보드가 {len(cards)}장이에요. {low}~{high}장이어야 해요.")
     return [{
@@ -257,7 +326,51 @@ def to_cards(cards: list[CardOut], allowed: set[str]) -> list[dict]:
         # 조사에 없던 URL은 근거로 인정하지 않아요 → 화면에 "근거 없음"으로 보여요
         "sourceUrls": [u for u in safe_urls(c.sourceUrls) if u in allowed],
         "imagePlan": c.imagePlan.model_dump(),
+        **({"candidateId": c.candidateId} if isinstance(c, SupportCardOut) else {}),
     } for i, c in enumerate(cards, 1)]
+
+
+# --- 지원사업·공모전 결과 바꾸기 ---------------------------------------------------------
+
+
+MONTH = re.compile(r"^(\d{4})-(\d{2})$")
+TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def safe_month(value: str | None) -> str | None:
+    match = MONTH.match((value or "").strip())
+    return match.group(0) if match and 1 <= int(match.group(2)) <= 12 else None
+
+
+def safe_time(value: str | None) -> str | None:
+    return value.strip() if value and TIME.match(value.strip()) else None
+
+
+def _support_dates(item) -> dict:
+    return {"deadline": safe_date(item.deadline), "deadlineTime": safe_time(item.deadlineTime),
+            "openMonth": safe_month(item.openMonth),
+            "amountKRW": item.amountKRW if item.amountKRW and item.amountKRW > 0 else None}
+
+
+def to_support_candidates(out: SupportResearchOutput) -> list[dict]:
+    result = []
+    for cand in out.candidates:
+        sources = [{**s.model_dump(), "url": u} for s in cand.sources if (u := safe_url(s.url))]
+        if not sources:
+            continue
+        sources = sorted(sources, key=lambda s: SOURCE_RANK[s["type"]])
+        result.append({**cand.model_dump(), "sources": sources, **_support_dates(cand)})
+    return [{"id": f"cand_{i}", **c} for i, c in enumerate(result[:MAX_CANDIDATES], 1)]
+
+
+def to_support_notes(notes: list[SupportNoteOut], selected: set[str]) -> list[dict]:
+    clean = {n["candidateId"]: n for n in to_notes(notes, selected)}
+    for note in notes:
+        if note.candidateId in clean:
+            notice = {**note.notice.model_dump(), **_support_dates(note.notice),
+                      "officialUrl": safe_url(note.notice.officialUrl) if note.notice.officialUrl else None}
+            clean[note.candidateId] = {**clean[note.candidateId], "notice": notice}
+    return list(clean.values())
 
 
 def to_editorial(e: EditorialOut | None, decided_by: str) -> dict:

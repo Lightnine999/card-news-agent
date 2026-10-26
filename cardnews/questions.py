@@ -81,6 +81,21 @@ def public(question: dict) -> dict:
     return {k: v for k, v in question.items() if k != "origin"}
 
 
+def broaden_question(found: int) -> dict:
+    """지원사업·공모전: 맞는 공고가 적으면 분야·지역을 넓힐지 물어요. 기간(6개월)은 넓히지 않아요."""
+    return {
+        "id": "q_broaden",
+        "prompt": f"6개월 안에 맞는 공고가 {found}개뿐이에요. 분야나 지역을 넓혀서 다시 찾을까요?",
+        "options": [
+            {"id": "broaden", "label": "넓혀서 다시 찾기", "description": "비슷한 분야·전국 단위 공고까지 찾아요. 기간은 그대로 6개월이에요."},
+            {"id": "keep", "label": "이대로 보기", "description": f"찾은 {found}개 안에서 골라요."},
+        ],
+        "allowFreeText": False,
+        "recommendedOptionId": "broaden",
+        "recommendationReason": "공고가 적으면 고를 거리가 부족해서요.",
+    }
+
+
 def expand_period_question(found: int, days: int) -> dict:
     return {
         "id": "q_expand_period",

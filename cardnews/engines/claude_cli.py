@@ -13,13 +13,14 @@ import threading
 import time
 from pathlib import Path
 
-from cardnews import config, sources
+from cardnews import config, sources, support
 from cardnews import proc as procs
 from cardnews.proc import kill_group
 from cardnews.engines import claude_prompts as prompts
 from cardnews.engines import claude_schema as S
 from cardnews.engines.base import Cancelled, EngineEvent, RunContext
 from cardnews.errors import AppError
+from cardnews.util import now
 
 SEARCH_TOOLS = ("WebSearch", "WebFetch")
 BLOCKED_TOOLS = ("Bash", "Edit", "Write", "NotebookEdit", "Task")
@@ -207,6 +208,8 @@ class ClaudeCliEngine:
 
     def start(self, ctx: RunContext, task: dict) -> EngineEvent:
         kind = task["kind"]
+        if task.get("workflow") == "support" and kind in ("research", "deep_research", "storyboard"):
+            return self._support(ctx, task)
         if kind == "research":
             out, sid = self._call(ctx, prompts.research(task), S.ResearchOutput, "research")
             if out.status == "error":
@@ -241,6 +244,30 @@ class ClaudeCliEngine:
                            data={"editorial": S.to_editorial(out.editorial, "ai_recommendation"),
                                  "cards": S.to_cards(out.cards, allowed)})
 
+    def _support(self, ctx: RunContext, task: dict) -> EngineEvent:
+        """지원사업·공모전 작업: 결과 형식과 지시문만 다르고, 카드는 앱 규칙으로 정리해요(support.finalize_cards)."""
+        kind = task["kind"]
+        if kind == "research":
+            out, sid = self._call(ctx, prompts.support_research(task), S.SupportResearchOutput, "research")
+            if out.status == "error":
+                return _error_event(out, sid)
+            return EngineEvent(type="result", data={"candidates": S.to_support_candidates(out)},
+                               partial=self._opened(), session_id=sid)
+        if kind == "deep_research":
+            out, sid = self._call(ctx, prompts.support_deep(task), S.SupportDeepOutput, "deep_research")
+            if out.status == "error":
+                return _error_event(out, sid)
+            notes = S.to_support_notes(out.researchNotes, {c["id"] for c in task["candidates"]})
+            data = {"editorial": S.to_editorial(out.editorial, "ai_recommendation"),
+                    **support_cards(out.cards, task["candidates"], notes)}
+            return EngineEvent(type="result", partial={"researchNotes": notes, **self._opened()},
+                               session_id=sid, data=data)
+        out, sid = self._call(ctx, prompts.support_storyboard(task), S.SupportStoryboardOutput, "storyboard")
+        if out.status == "error":
+            return _error_event(out, sid)
+        return EngineEvent(type="result", session_id=sid,
+                           data=support_cards(out.cards, task["candidates"], task["researchNotes"]))
+
     def send_answer(self, ctx: RunContext, task: dict, question: dict,
                     answer: dict) -> EngineEvent:
         out, sid = self._call(ctx, prompts.answer(task, question, answer), S.AnswerOutput,
@@ -251,3 +278,11 @@ class ClaudeCliEngine:
         return EngineEvent(type="result", session_id=sid,
                            data={"editorial": S.to_editorial(out.editorial, "user_answer"),
                                  "cards": S.to_cards(out.cards, allowed)})
+
+
+def support_cards(cards, candidates: list[dict], notes: list[dict]) -> dict:
+    """엔진 카드 → 앱 카드: 조사에 없던 URL을 빼고, 확인 결과로 거르고 순서·문구를 정해요."""
+    allowed = S.allowed_urls(candidates, notes)
+    raw = S.to_cards(cards, allowed, (support.CARD_RANGE[0], S.MAX_CANDIDATES + 2))
+    final, dropped = support.finalize_cards(raw, notes, candidates, now().date())
+    return {"cards": final, "dropped": dropped}

@@ -181,3 +181,119 @@ def storyboard(task: dict) -> str:
 {notes}
 
 {CARD_RULES}"""
+
+
+# --- 지원사업·공모전 (SUPPORT_PRD) -----------------------------------------------------
+
+SUPPORT_SOURCE_RULES = """출처 규칙:
+- 근거는 주최 측 공식 페이지예요(K-Startup, 기업마당, 한국콘텐츠진흥원, 정부 부처·지자체·공공기관, 대학, 대회 공식 사이트).
+  이런 페이지는 type=official로 넣어요.
+- 공고 모음 사이트(링커리어·위비티·씽굿 등)와 기사·블로그는 공고를 찾는 실마리로만 써요. 넣더라도 type=blog·press로 정직하게 적고,
+  같은 공고의 공식 페이지를 따로 찾아 첫 출처로 넣어요. 공식 페이지를 찾지 못한 공고는 앱이 후보에서 빼요.
+- 공식 페이지를 WebFetch로 열어 날짜·금액·대상을 확인해요. 열지 못했으면 dateStatus=unverified로 둬요."""
+
+SUPPORT_DATE_RULES = """날짜 규칙 (D-day는 앱이 계산해요. D-day 숫자를 적지 않아요):
+- dateStatus=confirmed: 공고문이 이미 나왔고 마감일을 공식 페이지에서 확인했어요. deadline=YYYY-MM-DD, 시각이 나와 있으면 deadlineTime=HH:MM.
+- dateStatus=rolling: 상시 모집·선착순·예산 소진 시 마감처럼 마감일이 없어요. rollingText에 그 문구를 적어요.
+- dateStatus=expected: 아직 공고 전이고, 연간 통합공고·기관 사업 계획·작년 공고문으로 열릴 달만 알아요. openMonth=YYYY-MM,
+  basis에 근거(예: "2026년 창업지원사업 통합공고 기준", "작년 3월 공고")를 적고, 그 근거 페이지를 sources에 넣어요.
+- dateStatus=unverified: 날짜를 공식 페이지에서 확인하지 못했어요.
+- 금액: amountText는 공고문에 나온 그대로 한 줄(예: "총상금 5천만 원 · 대상 1천만 원"), amountKRW는 비교용 현금성 최대 금액 하나(원 단위 정수).
+  투자 연계처럼 금액이 정해지지 않았으면 amountKRW=null, 확인하지 못했으면 amountText는 빈 값이에요.
+- hostType: gov(정부·공공기관·지자체) / corp(대기업) / univ(대학·재단) / other."""
+
+
+def _support_period(task: dict) -> tuple[str, str]:
+    from cardnews import support
+
+    start, end = support.window(datetime.fromisoformat(task["requestedAt"]).date())
+    return start.isoformat(), end.isoformat()
+
+
+def support_research(task: dict) -> str:
+    start, end = _support_period(task)
+    broaden = ("\n이전 조사에서 맞는 공고가 적었어요. 이번에는 분야를 넓히고(비슷한 분야·일반 창업·청년 지원) 지역도 전국 단위까지 넓혀서 찾아요."
+               " 기간은 그대로예요.\n" if task.get("broaden") else "")
+    return f"""{_quoted("관심 분야", task["topic"])}
+{broaden}
+조사 기준 시각: {task["requestedAt"]} (Asia/Seoul)
+조사 범위: 오늘부터 6개월 ({start} ~ {end})
+대상 독자: 대학생과 일반인 예비 창업자
+
+할 일:
+1. 대학생·예비 창업자가 지원할 수 있는 지원사업·공모전·해커톤을 찾아요. 특정 사업에 한정하지 않아요. 해커톤도 넣어요(kind=해커톤).
+2. 후보마다 주최 측 공식 공고문을 찾아 WebFetch로 열고, 대상·지원 내용(금액)·마감·신청 기관을 확인해요.
+3. 범위 안 공고만 넣어요: 마감일이 오늘~{end} 사이이거나, 상시 모집이거나, {end[:7]}까지 열릴 예정인 것.
+   이미 마감된 공고와 6개월 밖 공고는 넣지 않아요.
+4. 서로 다른 공고를 7~12개 돌려줘요. 상금·지원금·투자금이 크고 주목받는 것을 먼저 찾아요.
+   부족하면 찾은 만큼만 돌려줘요. 없는 공고를 만들지 않아요.
+5. 후보마다 title(사업·대회 이름), summary(2문장), kind, host(주최), hostType, target(대상 조건을 짧게),
+   amountText, amountKRW, dateStatus, deadline, deadlineTime, rollingText, openMonth, basis, sources(url·name·type),
+   whyPick(고를 만한 이유), uncertainty(불확실한 점)를 채워요.
+6. "역대 최대", "가장 인기" 같은 말은 공식 근거가 있을 때만 써요.
+7. 검색 도구를 쓸 수 없거나 계속 실패하면 status=error, error.code=SEARCH_FAILED로 돌려줘요. 그 밖에는 status=result예요.
+
+{SUPPORT_SOURCE_RULES}
+
+{SUPPORT_DATE_RULES}"""
+
+
+def _support_candidate_lines(candidates: list[dict]) -> str:
+    lines = []
+    for c in candidates:
+        urls = ", ".join(s["url"] for s in c["sources"])
+        when = c.get("deadline") or c.get("openMonth") or c.get("rollingText") or "미확인"
+        lines.append(f"- id={c['id']} 이름: {c['title']} / 주최: {c.get('host')} / 날짜: {c.get('dateStatus')} {when} / 출처: {urls}")
+    return "\n".join(lines)
+
+
+SUPPORT_CARD_RULES = """카드(cards) 규칙:
+- 첫 장은 cover(candidateId=null): 모은 공고 수, 가장 큰 금액이나 가장 임박한 마감 하나를 후킹으로 써요.
+  표지에는 D-day 숫자와 날짜를 쓰지 않아요(앱이 공고 카드에 계산해서 넣어요).
+- 고른 공고마다 body 카드 한 장(candidateId=그 공고 id): title은 사업·대회 이름(30자 안), keyLine은 금액·혜택 한 줄,
+  body는 빈 값으로 둬요(대상·마감·신청 줄은 앱이 확인 결과로 채워요).
+- 마지막은 summary(candidateId=null). keyLine·body는 앱이 두 묶음을 마감순으로 정리해 채우니 짧게 둬요.
+- 카드 순서는 신경 쓰지 않아도 돼요. 앱이 금액·주최·마감 순으로 다시 놓아요.
+- sourceUrls에는 조사 기록·후보에 나온 URL만 넣어요. 새 URL을 만들지 않아요. 신청 링크 주소를 카드 문구에 쓰지 않아요.
+- imageRole은 그림이 맡는 역할 한 줄, imagePlan.prompt에는 그 공고 분야를 비유하는 물건 하나와 구도, 글자를 올릴 빈 공간 위치를 적어요.
+  그림 안에 글자·로고를 넣지 않아요. 실제 행사 사진처럼 보이는 그림은 계획하지 않아요.
+- editorial: audience="대학생·예비 창업자", format="공고 카드형", decidedBy=ai_recommendation, hooks 2~3개(확인된 금액·사실 안에서만, D-day 숫자 없이).
+  formatComparison은 비워도 돼요."""
+
+
+def support_deep(task: dict) -> str:
+    return f"""{_quoted("관심 분야", task["topic"])}
+
+사용자가 카드로 만들 공고예요 (id는 그대로 돌려줘요):
+{_support_candidate_lines(task["candidates"])}
+
+할 일:
+1. 공고마다 주최 측 공식 공고문을 WebFetch로 다시 열어 대상·지원 내용(금액)·마감(시각 포함)·신청 방법을 확정해요.
+   위 출처에 공식 공고문이 없으면 WebSearch로 찾아요. 공고 모음 사이트는 근거로 쓰지 않아요.
+2. 공고마다 researchNotes를 만들어요: facts(공고문에서 확인한 대상·금액·마감·신청 방법과 근거 URL), limits(확인 못 한 것),
+   conflicts(자료끼리 다른 내용), primarySources(실제로 열어 확인한 공식 페이지 URL만), unreachable(열지 못한 URL과 이유),
+   claims는 비워도 돼요. officialDate는 공고 게시일을 알면 YYYY-MM-DD, 모르면 null이에요.
+   notice에는 확정한 값을 넣어요: target(대상 조건 짧게), applyVia(신청하는 곳 이름), amountText, amountKRW, dateStatus, deadline,
+   deadlineTime, rollingText, openMonth, basis, officialUrl(실제로 열어 확인한 공식 공고문 URL), prepare(미리 준비할 것 한 줄).
+   공고문을 열지 못했으면 dateStatus=unverified로 정직하게 적어요(앱이 카드에서 빼요).
+3. 질문하지 않아요. 독자는 대학생·예비 창업자로 정해져 있어요. status=result로 researchNotes, editorial, cards를 돌려줘요.
+
+{SUPPORT_DATE_RULES}
+
+{SUPPORT_CARD_RULES}"""
+
+
+def support_storyboard(task: dict) -> str:
+    current = json.dumps(task["storyboard"]["cards"], ensure_ascii=False)
+    notes = json.dumps(task["researchNotes"], ensure_ascii=False)
+    return f"""지금 카드예요:
+{current}
+
+{_quoted("수정 요청", task["instruction"] or "")}
+
+수정 요청을 반영한 전체 cards를 status=result로 돌려줘요. 공고 카드는 candidateId를 그대로 두고, 요청과 관계없는 카드는 그대로 둬요.
+공고 카드의 본문·요약 카드 문구·D-day는 앱이 확인 결과로 다시 채워요.
+조사 기록(이 밖의 사실은 쓰지 않아요):
+{notes}
+
+{SUPPORT_CARD_RULES}"""

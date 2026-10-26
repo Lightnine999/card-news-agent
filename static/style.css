@@ -117,6 +117,7 @@ textarea { width: 100%; min-height: 72px; margin-top: 6px; }
 .board { width: 100%; border-collapse: collapse; font-size: .92rem; }
 .board th, .board td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
 .board tr.no-source td { color: var(--warn); }
+.board td.pre { white-space: pre-line; }
 .feedback { display: block; margin-top: 12px; font-weight: 600; }
 
 .flash { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px);

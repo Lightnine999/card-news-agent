@@ -1,6 +1,7 @@
 """GET 응답 모양 (API_SPEC 2.1, 2.6)."""
 
-from cardnews import questions, repo, service, sources
+from cardnews import questions, repo, service, sources, support
+from cardnews.util import now
 
 
 def public_run(run: dict | None) -> dict | None:
@@ -10,8 +11,9 @@ def public_run(run: dict | None) -> dict | None:
             "startedAt", "finishedAt", "resumedFrom")
     view = {k: run[k] for k in keys}
     if run["kind"] == "research":  # 조사 중에도 기준 시각·기간을 보여 주려고요
-        view["period"] = {"days": run["payload"]["periodDays"],
-                          "requestedAt": run["payload"].get("requestedAt")}
+        span = {"months": support.MONTHS} if run["payload"].get("workflow") == "support" \
+            else {"days": run["payload"]["periodDays"]}
+        view["period"] = {**span, "requestedAt": run["payload"].get("requestedAt")}
     return view
 
 
@@ -20,6 +22,10 @@ def _research_view(data: dict) -> dict | None:
     if not research:
         return research
     marked = sources.mark(research["candidates"], data.get("openedUrls", []))
+    if research.get("workflow") == "support":  # D-day는 화면을 볼 때마다 오늘 기준으로 앱이 계산해요
+        today = now().date()
+        marked = [{**c, "dday": support.dday_text(c["deadline"], today)
+                   if c.get("dateStatus") == "confirmed" and c.get("deadline") else None} for c in marked]
     return {**research, "candidates": marked}
 
 
@@ -46,6 +52,8 @@ def project_view(conn, project: dict) -> dict:
         "topic": project["topic"],
         "stage": project["stage"],
         "isMock": project["isMock"],
+        "workflow": service.workflow(project),
+        "maxSelection": service.max_selection(project),
         "engine": {"name": project["engineName"], "sessionId": project["sessionId"]},
         "research": _research_view(data),
         "selection": data["selection"],

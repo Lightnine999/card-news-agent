@@ -276,10 +276,10 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 | # | 요청 | 본문 | 성공 응답 | requestId |
 |---|---|---|---|---|
 | 1 | `GET /api/projects` **[추가]** | 없음 | `200` 프로젝트 요약 목록 | – |
-| 2 | `POST /api/projects` | `topic`, `periodDays?`(기본 7), `requestId?` | `201 { projectId }` | 선택 |
+| 2 | `POST /api/projects` | `topic`, `workflow?`(`news`/`support`, 기본 `news`), `periodDays?`(기본 7), `requestId?` | `201 { projectId }` | 선택 |
 | 3 | `POST /api/projects/{id}/research` | `requestId`, `periodDays?` | `202 { runId, status }` | 필수 |
 | 4 | `GET /api/projects/{id}` | 없음 | `200` Project 전체 | – |
-| 5 | `POST /api/projects/{id}/selection` | `candidateIds`(0~3개), `version` | `200 { selection, version }` | – (덮어쓰기라 반복해도 안전) |
+| 5 | `POST /api/projects/{id}/selection` | `candidateIds`(최신 소식 0~3개, 지원사업 0~7개), `version` | `200 { selection, version }` | – (덮어쓰기라 반복해도 안전) |
 | 6 | `POST /api/projects/{id}/deep-research` **[추가]** | `version`, `requestId`, `audienceNote?`(200자) | `202 { runId }` | 필수 |
 | 7 | `POST /api/projects/{id}/answers` | `questionId`, `version`, `answer`, `requestId` | `202 { accepted: true, runId, status }` | 필수 |
 | 8 | `POST /api/projects/{id}/storyboard/feedback` **[추가]** | `instruction`, `version`, `requestId` | `202 { runId }` | 필수 |
@@ -334,6 +334,37 @@ run 종류(`run.kind`): `research`, `deep_research`, `storyboard`, `production`,
 **15. 파일** — `data/projects/{id}/` 밖을 가리키는 경로(`..`, 절대경로, 심볼릭 링크)는 `NOT_FOUND`. 응답 `Content-Type`은 실제 파일 시그니처로 정해요.
 
 **16. 상태 점검** — `claude --version`, `agy --version`, Chromium 실행, 글꼴 파일 존재만 확인해요. 로그인 여부는 실제 호출에서만 알 수 있어서 `"unknown"`으로 보여 줘요.
+
+## 3.0 지원사업·공모전 작업 (STEP 13 확장, D21)
+
+같은 앱·같은 엔드포인트를 써요. 프로젝트를 만들 때 `workflow: "support"`를 보내면 아래가 달라져요. 기준 문서는 `SUPPORT_PRD.md`예요.
+
+| 항목 | 최신 소식 (`news`) | 지원사업·공모전 (`support`) |
+|---|---|---|
+| 조사 범위 | `research.period = {days, from, to}` (최근 7·30일) | `research.period = {months: 6, from: 조사 기준 시각, to: 6개월 뒤 날짜}` |
+| 후보 | Candidate (2.2) | 아래 SupportCandidate, `group`(`open`/`upcoming`) 순서로 정렬 |
+| 앱이 빼는 후보 | 게시일이 기간 밖 | 마감 지남·6개월 밖·날짜 미확인·예정 근거 없음·공식 링크 없음 (`research.excluded`에 이유) |
+| 적을 때 질문 | 5개 미만 → `q_expand_period` (30일로 넓히기) | 3개 미만 → `q_broaden` (분야·지역 넓히기, 기간은 그대로, 한 번만) |
+| 선택 상한 | 3 (`maxSelection`) | 7 (`maxSelection`) |
+| 스토리보드 | 5~8장 | 3~9장 (표지 + 공고 한 장씩 + 요약), 공고 카드에 `candidateId`·`notice`, 빠진 공고는 `storyboard.dropped` |
+| 내보낸 파일 검사 | 날짜(게시일·공식 발표일) | 마감일·D-day·금액·예정 공고 (게시일 검사 대신) |
+
+```json
+{
+  "id": "cand_1", "title": "사업·대회 이름", "summary": "두 문장", "kind": "지원사업 | 공모전 | 해커톤",
+  "host": "주최", "hostType": "gov | corp | univ | other", "target": "대상 조건",
+  "amountText": "총상금 5천만 원 · 대상 1천만 원", "amountKRW": 50000000,
+  "dateStatus": "confirmed | rolling | expected | unverified",
+  "deadline": "2026-11-14 | null", "deadlineTime": "18:00 | null", "rollingText": "예산 소진 시 마감 | null",
+  "openMonth": "2027-03 | null", "basis": "2026년 통합공고 기준",
+  "sources": [ { "url": "https://...", "name": "...", "type": "official", "opened": true } ],
+  "whyPick": "...", "uncertainty": "...", "group": "open | upcoming", "dday": "D-19 | 오늘 마감 | null"
+}
+```
+
+- `dday`는 응답을 만들 때 오늘(Asia/Seoul) 기준으로 앱이 계산해요. 엔진이 적은 숫자를 쓰지 않아요.
+- 심층 확인 결과는 ResearchNote(2.3)에 `notice` {target, applyVia, amountText, amountKRW, dateStatus, deadline, deadlineTime, rollingText, openMonth, basis, officialUrl, prepare}가 더해져요. 카드 문구와 검사는 이 값을 기준으로 해요.
+- 프로젝트 응답(2.1)에 `workflow`와 `maxSelection`이 더해졌어요.
 
 ## 3.1 연결 방식: 주제 입력 → 후보 선택 → 질문 답변
 

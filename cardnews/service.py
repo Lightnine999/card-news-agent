@@ -2,7 +2,7 @@
 
 import json
 
-from cardnews import config, db, pipeline, production, questions, repo
+from cardnews import config, db, pipeline, production, questions, repo, support
 from cardnews.errors import AppError
 from cardnews.util import body_hash, now_iso
 
@@ -69,8 +69,16 @@ def _start_run(conn, project: dict, kind: str, payload: dict) -> tuple[dict, dic
 # --- 프로젝트·조사 ---------------------------------------------------------------
 
 
-def create_project(conn, topic: str) -> dict:
-    return repo.insert_project(conn, topic, config.engine_name())
+def create_project(conn, topic: str, workflow: str = "news") -> dict:
+    return repo.insert_project(conn, topic, config.engine_name(), workflow)
+
+
+def workflow(project: dict) -> str:
+    return project["data"].get("workflow") or "news"  # 예전 프로젝트는 최신 소식이에요
+
+
+def max_selection(project: dict) -> int:
+    return support.MAX_SELECTION if workflow(project) == "support" else config.MAX_SELECTION
 
 
 def start_research(conn, project_id: str, period_days: int) -> dict:
@@ -80,7 +88,8 @@ def start_research(conn, project_id: str, period_days: int) -> dict:
     data = {**project["data"], "research": None,
             "selection": {"candidateIds": [], "savedAt": None}}
     project, run = _start_run(conn, {**project, "data": data}, "research",
-                              {"periodDays": period_days, "requestedAt": None})
+                              {"periodDays": period_days, "requestedAt": None,
+                               "workflow": workflow(project), "broaden": False})
     return {"runId": run["id"], "status": run["status"]}
 
 
@@ -90,8 +99,8 @@ def save_selection(conn, project_id: str, candidate_ids: list[str], version: int
     _require_version(project["version"], version)
     known = {c["id"] for c in project["data"]["research"]["candidates"]}
     ids = list(dict.fromkeys(candidate_ids))
-    if len(ids) > config.MAX_SELECTION:
-        raise AppError("VALIDATION_ERROR", f"최대 {config.MAX_SELECTION}개까지 고를 수 있어요.")
+    if len(ids) > max_selection(project):
+        raise AppError("VALIDATION_ERROR", f"최대 {max_selection(project)}개까지 고를 수 있어요.")
     if not set(ids) <= known:
         raise AppError("VALIDATION_ERROR", "없는 후보가 들어 있어요.",
                        {"unknown": sorted(set(ids) - known)})
@@ -107,8 +116,8 @@ def start_deep_research(conn, project_id: str, version: int, audience_note: str 
     _require_version(project["version"], version)
     _require_idle(conn, project_id)
     count = len(project["data"]["selection"]["candidateIds"])
-    if not 1 <= count <= config.MAX_SELECTION:
-        raise AppError("STAGE_CONFLICT", "후보를 1~3개 고른 뒤에 진행할 수 있어요.",
+    if not 1 <= count <= max_selection(project):
+        raise AppError("STAGE_CONFLICT", f"후보를 1~{max_selection(project)}개 고른 뒤에 진행할 수 있어요.",
                        {"selected": count})
     _, run = _start_run(conn, project, "deep_research", {"audienceNote": audience_note})
     return {"runId": run["id"], "status": run["status"]}

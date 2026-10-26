@@ -14,7 +14,8 @@ const KIND_LABEL = {
   research: '넓은 조사', deep_research: '심층 조사', storyboard: '스토리보드 수정', production: '제작',
   image_retry: '카드 다시 만들기', render: '글자 올리기', revision: '카드 고치기', export: '내보내기',
 };
-const MAX_SELECTION = 3;
+const GROUP_LABEL = { open: '지금 지원 가능', upcoming: '곧 열릴 예정' };
+const HOST_LABEL = { gov: '정부·공공', corp: '대기업', univ: '대학·재단', other: '기타' };
 
 const btn = (action, label, ui, { cls = '', disabled = false, data = '' } = {}) => {
   const busy = ui.pending.has(action);
@@ -42,12 +43,16 @@ export function homeView(projects, health, ui) {
     <section class="panel">
       <h1>주제를 입력해 주세요</h1>
       <form id="create-form" class="create">
-        <input name="topic" maxlength="100" required placeholder="AI 최신소식" value="${esc(ui.drafts.topic || '')}">
-        <select name="periodDays" aria-label="조사 기간">
+        <select name="workflow" aria-label="작업 종류">
+          <option value="news">최신 소식</option><option value="support">지원사업·공모전</option>
+        </select>
+        <input name="topic" maxlength="100" required placeholder="AI 최신소식 / IT·AI 창업 지원사업과 공모전" value="${esc(ui.drafts.topic || '')}">
+        <select name="periodDays" aria-label="조사 기간 (최신 소식만)">
           <option value="7">최근 7일</option><option value="30">최근 30일</option>
         </select>
         ${btn('create', '조사 시작', ui, { cls: 'primary' })}
       </form>
+      <p class="small muted">지원사업·공모전은 기간을 고르지 않아요. 오늘부터 6개월 안에 지원할 수 있거나 열릴 공고를 찾아요.</p>
       ${healthLine(health)}
     </section>
     <section class="panel"><h2>이전 프로젝트</h2>
@@ -67,16 +72,18 @@ export function headerView(p) {
   const running = p.activeRun?.period;
   const failed = !p.activeRun && ['failed', 'interrupted', 'cancelled'].includes(p.lastRun?.status)
     ? p.lastRun.period : null;
+  // 최신 소식은 "최근 7일", 지원사업·공모전은 "오늘부터 6개월"
+  const span = (x) => (x.months ? `오늘부터 ${x.months}개월` : `최근 ${x.days}일`);
   let period = '조사 전';
   if (!r?.requestedAt && failed?.requestedAt) {  // 조사를 했지만 끝내지 못한 경우
-    period = `조사를 끝내지 못했어요 · ${fmtTime(failed.requestedAt)} 기준 · 최근 ${failed.days}일`;
+    period = `조사를 끝내지 못했어요 · ${fmtTime(failed.requestedAt)} 기준 · ${span(failed)}`;
   }
   if (r?.requestedAt) {
-    period = `${fmtTime(r.requestedAt)} 기준 · 최근 ${r.period.days}일 (${fmtDate(r.period.from)} ~ ${fmtDate(r.period.to)})`;
+    period = `${fmtTime(r.requestedAt)} 기준 · ${span(r.period)} (${fmtDate(r.period.from)} ~ ${fmtDate(r.period.to)})`;
   } else if (running) {
     period = running.requestedAt
-      ? `조사 중 · ${fmtTime(running.requestedAt)} 기준 · 최근 ${running.days}일`
-      : `조사 준비 중 · 최근 ${running.days}일`;
+      ? `조사 중 · ${fmtTime(running.requestedAt)} 기준 · ${span(running)}`
+      : `조사 준비 중 · ${span(running)}`;
   }
   return `
     ${p.isMock ? '<div class="mock-band">모의 데이터예요. 실제 검색 결과가 아니에요.</div>' : ''}
@@ -191,26 +198,81 @@ function candidateView(c, ui) {
     </article>`;
 }
 
+// 지원사업·공모전 후보: 금액·대상·마감(D-day는 앱 계산)·주최
+function supportWhen(c) {
+  if (c.dateStatus === 'confirmed') return `마감 ${esc(c.deadline)}${c.deadlineTime ? ` ${esc(c.deadlineTime)}` : ''} <b>${esc(c.dday || '')}</b>`;
+  if (c.dateStatus === 'rolling') return `마감: ${esc(c.rollingText || '상시 모집')}`;
+  return `열림 ${esc(c.openMonth)} 예정(미확정) <span class="muted small">근거: ${esc(c.basis)}</span>`;
+}
+
+function supportCandidateView(c, ui) {
+  const checked = ui.selected.has(c.id);
+  const [first, ...more] = c.sources;
+  const unopened = (s) => (s.type === 'official' && s.opened === false
+    ? ' <span class="badge unverified" title="엔진이 이 페이지를 직접 열어 확인하지 않았어요">출처 미확인</span>' : '');
+  const source = (s) => `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener noreferrer">${esc(s.name)}</a>
+    <span class="badge gray">${esc(SOURCE_LABEL[s.type] || s.type)}</span>${unopened(s)}`;
+  return `
+    <article class="cand ${checked ? 'on' : ''}">
+      <label class="pick"><input type="checkbox" data-candidate="${esc(c.id)}" ${checked ? 'checked' : ''}>
+        <span class="sr">이 공고 고르기</span></label>
+      <div>
+        <p><span class="badge">${esc(c.kind)}</span> <span class="badge gray">${esc(HOST_LABEL[c.hostType] || c.hostType)}</span></p>
+        <h3>${esc(c.title)}</h3>
+        <p><b>${esc(c.amountText || '금액 확인 필요')}</b></p>
+        <p>대상: ${esc(c.target)}</p>
+        <p>${supportWhen(c)}</p>
+        <p class="muted small">주최: ${esc(c.host)}</p>
+        <p>${source(first)}</p>${more.length ? `<details><summary>다른 출처 ${more.length}개</summary><ul>${more.map((s) => `<li>${source(s)}</li>`).join('')}</ul></details>` : ''}
+        <p class="why">고를 만한 이유: ${esc(c.whyPick)}</p>
+        <p class="unsure">불확실한 점: ${esc(c.uncertainty)}</p>
+      </div>
+    </article>`;
+}
+
 // 엔진이 넣었지만 게시일이 조사 기간 밖이라 앱이 뺀 후보
-function excludedView(excluded) {
+function excludedView(excluded, support = false) {
   if (!excluded?.length) return '';
   const rows = excluded.map((e) => `<li>${e.url
     ? `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${esc(e.title)}</a>`
     : esc(e.title)} <span class="muted">— ${esc(e.reason)}</span></li>`).join('');
   return `
     <div class="excluded">
-      <p><b>조사 기간 밖 후보 ${excluded.length}개를 뺐어요.</b>
-        <span class="muted">게시일이 조사 기간에 들지 않아서예요.</span></p>
+      <p><b>${support ? `공고 ${excluded.length}개를 뺐어요.` : `조사 기간 밖 후보 ${excluded.length}개를 뺐어요.`}</b>
+        <span class="muted">${support ? '이미 마감됐거나, 6개월 밖이거나, 공식 근거를 확인하지 못해서예요.' : '게시일이 조사 기간에 들지 않아서예요.'}</span></p>
       <details><summary>뺀 후보 보기</summary><ul>${rows}</ul></details>
     </div>`;
 }
 
+function supportSelectingView(p, ui) {
+  const cands = p.research?.candidates || [];
+  const count = ui.selected.size;
+  const group = (g) => {
+    const list = cands.filter((c) => c.group === g);
+    return `<h3>${GROUP_LABEL[g]} ${list.length}</h3>
+      ${list.length ? `<div class="cands">${list.map((c) => supportCandidateView(c, ui)).join('')}</div>` : '<p class="muted">없어요.</p>'}`;
+  };
+  return `
+    <section class="panel">
+      <div class="row"><h2>공고 ${cands.length}개 · 카드로 만들 공고를 1~${p.maxSelection}개 골라 주세요</h2>
+        ${btn('research', '다시 조사', ui, { cls: 'ghost' })}</div>
+      <p class="small muted">금액이 큰 순서로 놓았어요. D-day는 오늘 기준으로 앱이 계산해요.${p.research?.broadened ? ' 분야·지역을 넓혀서 다시 찾은 결과예요.' : ''}</p>
+      ${excludedView(p.research?.excluded, true)}
+      ${group('open')}${group('upcoming')}
+    </section>
+    <div class="sticky">
+      <span>${count}개 골랐어요</span>
+      ${btn('deep', '공식 공고문 확인하고 카드 만들기', ui, { cls: 'primary', disabled: count < 1 || ui.saving })}
+    </div>`;
+}
+
 export function selectingView(p, ui) {
+  if (p.workflow === 'support') return supportSelectingView(p, ui);
   const cands = p.research?.candidates || [];
   const count = ui.selected.size;
   return `
     <section class="panel">
-      <div class="row"><h2>후보 ${cands.length}개 · 1~${MAX_SELECTION}개 골라 주세요</h2>
+      <div class="row"><h2>후보 ${cands.length}개 · 1~${p.maxSelection}개 골라 주세요</h2>
         ${btn('research', '다시 조사', ui, { cls: 'ghost' })}</div>
       ${excludedView(p.research?.excluded)}
       <div class="cands">${cands.map((c) => candidateView(c, ui)).join('')}</div>
@@ -232,6 +294,7 @@ export function notesView(p) {
   const list = (items, fn) => (items.length ? `<ul>${items.map(fn).join('')}</ul>` : '<p class="muted">없음</p>');
   const notes = p.researchNotes.map((n) => `
     <details class="note"><summary>${esc(titles[n.candidateId] || n.candidateId)}</summary>
+      ${n.notice ? `<p class="small">공고문 확인: ${esc(n.notice.dateStatus)} · 마감/열림 ${esc(n.notice.deadline || n.notice.openMonth || n.notice.rollingText || '미확인')} · 금액 ${esc(n.notice.amountText || '확인 필요')} · 대상 ${esc(n.notice.target)} ${n.notice.officialUrl ? links([n.notice.officialUrl]) : ''}</p>` : ''}
       <p class="small">공식 발표 날짜: ${n.officialDate ? `<b>${esc(n.officialDate)}</b> ${n.officialDateSource ? links([n.officialDateSource]) : ''}` : '<b class="warn-text">미확인</b>'}</p>
       <h4>확인한 사실 (변화·사용 조건)</h4>${list(n.facts, (f) => `<li>${esc(f.text)} ${links(f.sourceUrls)}</li>`)}
       <h4>발표 주체의 주장</h4>${list(n.claims || [], (f) => `<li>${esc(f.text)} ${links(f.sourceUrls)}</li>`)}
@@ -267,7 +330,7 @@ export function storyboardView(p, ui) {
     <tr class="${c.sourceUrls.length ? '' : 'no-source'}">
       <td>${c.order}<br><span class="muted small">${esc(ROLE_LABEL[c.role] || c.role)}</span></td>
       <td><b>${esc(c.title)}</b><br>${esc(c.keyLine)}</td>
-      <td>${esc(c.body || '—')}</td>
+      <td class="pre">${esc(c.body || '—')}</td>
       <td>${esc(c.imageRole || '—')}<br><span class="muted small">제목 자리: ${esc(TEXT_AREA_LABEL[c.imagePlan.textArea] || c.imagePlan.textArea)}</span></td>
       <td>${c.sourceUrls.length ? c.sourceUrls.map(link).join('<br>') : '<b>근거 없음</b>'}</td>
     </tr>`).join('');
@@ -283,6 +346,8 @@ export function storyboardView(p, ui) {
     </section>
     <section class="panel">
       <h2>스토리보드 v${sb.version} · ${sb.cards.length}장 <span class="muted small">(한 장에 메시지 하나)</span></h2>
+      ${p.workflow === 'support' ? '<p class="small muted">공고 카드의 금액·대상·마감 줄과 요약 카드는 공식 공고문 확인 결과로 앱이 채워요. 변경 요청으로는 제목·표지·그림 계획·카드 구성을 바꿀 수 있어요. 마감 줄의 D-day는 글자를 올리는 날 기준으로 다시 계산해요.</p>' : ''}
+      ${sb.dropped?.length ? `<p class="small warn-text">공식 공고문으로 다시 확인해서 ${sb.dropped.length}개를 뺐어요: ${sb.dropped.map((d) => `${esc(d.title)} — ${esc(d.reason)}`).join(' / ')}</p>` : ''}
       <div class="table-wrap"><table class="board">
         <thead><tr><th>장</th><th>제목 · 핵심 문장</th><th>본문</th><th>이미지 역할</th><th>출처</th></tr></thead>
         <tbody>${rows}</tbody></table></div>

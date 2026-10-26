@@ -10,11 +10,12 @@
 
 from pathlib import Path
 
-from cardnews import config, db, pipeline, repo, revise
+from cardnews import config, db, pipeline, repo, revise, support
 from cardnews.engines.base import Cancelled, RunContext
 from cardnews.errors import AppError
 from cardnews.images import agy, claude_svg, mock
 from cardnews.render.runner import Renderer
+from cardnews.util import now
 
 STOP_CODES = {"AUTH_REQUIRED", "TOOL_UNAVAILABLE"}
 
@@ -139,8 +140,11 @@ def _targets(run: dict, storyboard: dict, result: dict | None) -> tuple[list[tup
     return [(c, True) for c in storyboard["cards"]], True
 
 
-def _texts(card: dict, layout: dict) -> dict:
-    return {k: layout.get(k) if layout.get(k) is not None else card.get(k) for k in ("title", "keyLine", "body")}
+def _texts(card: dict, layout: dict, today=None) -> dict:
+    texts = {k: layout.get(k) if layout.get(k) is not None else card.get(k) for k in ("title", "keyLine", "body")}
+    if card.get("notice") and today:  # 공고 카드의 마감 줄은 고친 본문이어도 렌더링하는 날 기준으로 앱이 다시 써요
+        texts = {**texts, "body": support.refresh_body(texts.get("body") or "", card["notice"], today)}
+    return texts
 
 
 def _make_one(ctx: RunContext, tools: dict, renderer: Renderer, card: dict, total: int, draw: bool) -> None:
@@ -160,14 +164,18 @@ def _make_one(ctx: RunContext, tools: dict, renderer: Renderer, card: dict, tota
     _update(ctx.run_id, _set_card(card["id"], status="rendering", image=image))
     ctx.report(f"글자 올리는 중: {card['order']}/{total} {card['title'][:30]}")
     layout = entry.get("layout") or default_layout(card)
+    today = now().date()
+    texts = _texts(card, layout, today)
     out = renderer.render(
         out_stem=project_dir / "results" / "cards" / f"{card['id']}.v{entry['cardVersion']}",
-        texts=_texts(card, layout), role=card["role"], layout=layout,
+        texts=texts, role=card["role"], layout=layout,
         bg=project_dir / image["file"] if image else None,
         disclose=bool(image) and str(image.get("origin", "")).startswith("generated"))
     _update(ctx.run_id, _set_card(
         card["id"], status="done", layout=layout, png=out["png"].relative_to(project_dir).as_posix(),
-        checks={"layout": out["checks"]}, render={"applied": out["applied"], "autoFixes": out["autoFixes"]}))
+        checks={"layout": out["checks"]},
+        render={"applied": out["applied"], "autoFixes": out["autoFixes"], "texts": texts,
+                **({"ddayBase": today.isoformat()} if card.get("notice") else {})}))
 
 
 def _fail(card_ids: list[str], err: AppError):

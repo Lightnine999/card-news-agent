@@ -34,7 +34,7 @@ html, body { margin: 0; width: 1080px; height: 1350px; overflow: hidden; }
 .text > div + div { margin-top: 28px; }
 .title { font-weight: 700; line-height: 1.25; }
 .keyLine { font-weight: 600; }
-.body { font-weight: 400; }
+.body { font-weight: 400; white-space: pre-line; }  /* 공고 카드의 대상·마감·신청 세 줄 */
 .ai { position: absolute; right: 28px; bottom: 22px; font-size: 20px; color: #151515; opacity: .6; }
 .card.measure .text, .card.measure .ai { visibility: hidden; }
 """

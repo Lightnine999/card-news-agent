@@ -13,8 +13,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from cardnews import config, sources
+from cardnews import config, sources, support
 from cardnews.render.layout import CARD_SIZE
+from cardnews.util import now
 
 FULL_DATE = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?")
 MONTH_DAY = re.compile(r"(?<!\d)(\d{1,2})\s*월\s*(\d{1,2})\s*일")
@@ -228,6 +229,127 @@ def _dates(plan: dict, card: dict, index: dict, data: dict, evidence: tuple) -> 
     return _item("날짜", target, "pass", "확인한 것: " + ", ".join(confirmed) + " (조사 기간·조사 기록과 맞아요).")
 
 
+# --- 지원사업·공모전 (SUPPORT_PRD "내보낸 파일 검사") -------------------------------------
+
+DDAY = re.compile(r"D-\d+|오늘 마감|마감 지남")
+
+
+def _rendered(plan: dict, card: dict) -> str:
+    """PNG에 실제로 올린 글자. 렌더링 기록이 없으면 지금 문구로 봐요."""
+    texts = (card.get("render") or {}).get("texts") or {}
+    layout = card.get("layout") or {}
+    return " ".join(str(texts.get(k) or layout.get(k) or plan.get(k) or "") for k in ("title", "keyLine", "body"))
+
+
+def _norm(urls) -> set[str]:
+    return {sources.normalize(u) for u in urls}
+
+
+def _official_seen(notice: dict, opened: set[str], official: set[str]) -> bool:
+    """공식 공고문 주소가 조사에 나온 공식 출처이고, 엔진이 실제로 열어 봤는지."""
+    url = notice.get("officialUrl")
+    return bool(url) and sources.normalize(url) in _norm(official) and sources.normalize(url) in _norm(opened)
+
+
+def support_deadline(plan: dict, opened: set[str], today, official: set[str]) -> dict:
+    target, notice = f"카드 {plan['order']}", plan["notice"]
+    seen = _official_seen(notice, opened, official)
+    if notice["dateStatus"] == "rolling":
+        if seen:
+            return _item("마감일", target, "pass", "상시 모집·소진 시 마감이고, 엔진이 공식 공고문을 열어 봤어요.")
+        return _item("마감일", target, "needs_check", "상시 모집이라고 적었지만 공식 공고문을 엔진이 열어 확인한 기록이 없어요.",
+                     "공식 공고문을 열어 아직 모집 중인지 확인해 주세요.")
+    reason = support.exclusion_reason(notice, today)
+    if reason:
+        return _item("마감일", target, "fail", reason, "이 공고 카드를 빼거나 공고를 다시 확인해 주세요.")
+    if not seen:
+        return _item("마감일", target, "needs_check",
+                     f"마감일({notice['deadline']})을 적었지만 공식 공고문(조사에 나온 공식 주소)을 엔진이 열어 확인한 기록이 없어요.",
+                     "sources.md의 공식 링크를 열어 마감일을 확인해 주세요.")
+    return _item("마감일", target, "pass", f"마감일({notice['deadline']})을 공식 공고문(엔진이 열어 봄)에서 확인했고 오늘부터 6개월 안이에요.")
+
+
+def support_dday(plan: dict, card: dict, today) -> dict:
+    target, notice = f"카드 {plan['order']}", plan["notice"]
+    base = (card.get("render") or {}).get("ddayBase")
+    found = DDAY.findall(_rendered(plan, card))
+    if not base or not found:
+        return _item("D-day", target, "fail", "카드에 앱이 계산한 D-day가 없어요.", "카드를 다시 렌더링해 주세요.")
+    expected = support.dday_text(notice["deadline"], date.fromisoformat(base))
+    if found != [expected]:
+        return _item("D-day", target, "fail", f"카드의 D-day({', '.join(found)})가 앱 계산({expected}, {base} 기준)과 달라요.",
+                     "카드를 다시 렌더링해 주세요.")
+    if base != today.isoformat():
+        return _item("D-day", target, "needs_check", f"{base} 기준 {expected}로 만들었어요. 오늘({today.isoformat()}) 기준으로 다시 계산해야 해요.",
+                     "카드를 다시 렌더링하거나 기준일이 보이는지 확인해 주세요.")
+    return _item("D-day", target, "pass", f"{expected}: 앱이 {base} 기준으로 계산한 값과 같아요.")
+
+
+AMOUNT = re.compile(r"\d[\d,.]*\s*(?:억|천만|백만|만|천)?\s*(?:원|달러)")
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"[\s,]", "", text)
+
+
+def support_amount(plan: dict, card: dict, opened: set[str], official: set[str], notes: list[dict]) -> dict:
+    """금액이 조사 기록 중 공식 주소를 근거로 한 사실(facts)에 있는지 봐요. 엔진이 낸 금액 문구끼리만 비교하지 않아요."""
+    target, notice = f"카드 {plan['order']}", plan["notice"]
+    if not notice.get("amountText"):
+        return _item("금액", target, "needs_check", "공식 공고문에서 금액을 확인하지 못했어요(카드에 '금액 확인 필요').",
+                     "공고문을 열어 지원 금액을 확인해 주세요.")
+    if notice["amountText"] not in _rendered(plan, card):
+        return _item("금액", target, "needs_check", "카드의 금액 문구가 조사 기록과 달라요(고친 문구일 수 있어요).",
+                     "카드 금액과 공고문 금액을 비교해 주세요.")
+    allowed = _norm(official) & _norm(opened)
+    facts = [f["text"] for n in notes if n.get("candidateId") == plan.get("candidateId")
+             for f in n.get("facts", []) if _norm(f.get("sourceUrls", [])) & allowed]
+    tokens = [_squash(t) for t in AMOUNT.findall(notice["amountText"])]
+    blob = _squash(" ".join(facts))
+    if not tokens or not all(t in blob for t in tokens):
+        return _item("금액", target, "needs_check",
+                     f"금액 문구({notice['amountText']})를 엔진이 연 공식 공고문의 확인한 사실에서 찾지 못했어요.",
+                     "공식 공고문에서 금액을 확인해 주세요.")
+    return _item("금액", target, "pass", f"금액 문구({notice['amountText']})가 엔진이 연 공식 공고문의 확인한 사실에 있어요.")
+
+
+def support_expected(plan: dict, card: dict, opened: set[str], today, official: set[str]) -> dict:
+    target, notice = f"카드 {plan['order']}", plan["notice"]
+    text = _rendered(plan, card)
+    if DDAY.search(text):
+        return _item("예정 공고", target, "fail", "아직 열리지 않은 공고에 D-day가 있어서 확정처럼 보여요.", "D-day를 빼 주세요.")
+    if "예정(미확정)" not in text:
+        return _item("예정 공고", target, "fail", "'예정(미확정)' 표시가 없어요.", "본문을 되돌리거나 표시를 넣어 주세요.")
+    reason = support.exclusion_reason(notice, today)  # 내보내는 날 기준으로 열릴 달이 지났는지 다시 봐요
+    if reason:
+        return _item("예정 공고", target, "fail", reason, "이 공고 카드를 빼거나 공고가 나왔는지 다시 확인해 주세요.")
+    if not _official_seen(notice, opened, official):
+        return _item("예정 공고", target, "needs_check", f"근거({notice['basis']})가 있지만 엔진이 공식 근거 페이지를 열어 확인한 기록이 없어요.",
+                     "근거 페이지를 열어 열릴 시기를 확인해 주세요.")
+    return _item("예정 공고", target, "pass", f"'예정(미확정)' 표시가 있고, 엔진이 연 공식 페이지에 근거가 있어요: {notice['basis']}")
+
+
+def support_other(plan: dict, card: dict) -> list[dict]:
+    """표지·요약·상시 카드: 앱이 계산하지 않은 D-day가 섞이면 실패예요."""
+    found = DDAY.findall(_rendered(plan, card))
+    if not found:
+        return []
+    return [_item("D-day", f"카드 {plan['order']}", "fail", f"앱이 D-day를 넣지 않는 카드에 D-day({', '.join(found)})가 있어요.",
+                  "이 카드 문구에서 D-day를 빼 주세요.")]
+
+
+def _support_checks(plan: dict, card: dict, opened: set[str], today, official: set[str], notes: list[dict]) -> list[dict]:
+    notice = plan.get("notice")
+    if not notice:
+        return support_other(plan, card)
+    amount = support_amount(plan, card, opened, official, notes)
+    if notice["dateStatus"] == "expected":
+        return [support_expected(plan, card, opened, today, official), amount]
+    if notice["dateStatus"] == "rolling":
+        return [support_deadline(plan, opened, today, official), *support_other(plan, card), amount]
+    return [support_deadline(plan, opened, today, official), support_dday(plan, card, today), amount]
+
+
 # --- 모으기 --------------------------------------------------------------------------
 
 
@@ -251,7 +373,12 @@ def verify(project: dict, out_dir: Path, zip_path: Path) -> dict:
                 items.append(_item("출처", f"카드 {plan['order']}", "needs_check",
                                    "스토리보드 뒤에 문구를 고쳤어요. 고친 문구가 원문과 맞는지는 확인하지 않았어요.",
                                    f"sources.md의 카드 {plan['order']} 근거 링크를 열어 고친 문구와 비교해 주세요."))
-            items.append(_dates(plan, card, index, data, evidence))
+            if data.get("workflow") == "support":  # 게시일 대신 마감·D-day·금액·예정 근거를 봐요
+                items += _support_checks(plan, card, set(data.get("openedUrls", [])), now().date(),
+                                         support.official_urls(data["research"]["candidates"], data.get("researchNotes") or []),
+                                         data.get("researchNotes") or [])
+            else:
+                items.append(_dates(plan, card, index, data, evidence))
     items.append(_item("출처", "전체", "needs_check",
                        "카드 문구가 원문 내용과 맞는지는 사람이 확인하지 않았어요. 앱은 근거 주소가 조사 기록에 있고 엔진이 열어 봤는지만 봐요.",
                        "카드마다 근거 링크를 열어 숫자·날짜·조건이 원문과 같은지 확인해 주세요."))
