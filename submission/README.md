@@ -34,6 +34,9 @@
 |---|---|
 | `results/research-prj_137e35bf7e7b.json` | 실제 조사 → 심층 조사 → 스토리보드까지 간 프로젝트의 API 응답 (후보 7개, 조사 기록 2개, 스토리보드 6장) |
 | `results/research-prj_ba7c431b0193.json` | 출처 열어 봄 표시를 켠 뒤 실제 조사한 프로젝트의 API 응답 (후보 6개) |
-| 카드 PNG·ZIP·출처 기록·이미지 사용 기록 | **아직 없음** — 이미지 제작·카드 렌더링·내보내기(구현 4~5단계) 후 추가해요 |
+| `results/cards/ai-news/` | AI 최신뉴스 최종 카드 PNG 7장 + sources.md·image-credits.md·verify.md |
+| `results/cards/semiconductor-news/` | 국내 반도체 최신뉴스 최종 카드 PNG 6장 + 같은 기록 파일 (5·6장은 agy 할당량 소진으로 Claude CLI SVG 대신 그림) |
+
+카드 미리보기는 앱 폴더 [README.md](../README.md#만든-카드-예시)에 있어요. ZIP은 카드 PNG와 같은 내용이라 용량 때문에 넣지 않았어요.
 
 결과 JSON의 엔진 세션 ID는 지웠어요.

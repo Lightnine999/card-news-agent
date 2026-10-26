@@ -1,8 +1,24 @@
 # 카드뉴스 워크플로 제작 키트
 
+## 만든 카드 예시
+
+실제 Claude CLI(조사·편집)와 agy(배경 그림)로 만들고, 최종 승인해 내보낸 카드예요. 카드 1장은 1080×1350 PNG이고, 글자는 그림에 그리지 않고 앱이 Pretendard로 따로 올렸어요. 카드를 누르면 원본 크기로 볼 수 있어요.
+
+### AI 최신뉴스 (2026-10-26, 7장)
+<img src="submission/results/cards/ai-news/card_01.png" width="180" alt="카드 1"> <img src="submission/results/cards/ai-news/card_02.png" width="180" alt="카드 2"> <img src="submission/results/cards/ai-news/card_03.png" width="180" alt="카드 3"> <img src="submission/results/cards/ai-news/card_04.png" width="180" alt="카드 4"> <img src="submission/results/cards/ai-news/card_05.png" width="180" alt="카드 5"> <img src="submission/results/cards/ai-news/card_06.png" width="180" alt="카드 6"> <img src="submission/results/cards/ai-news/card_07.png" width="180" alt="카드 7">
+
+출처·이미지 기록·검사 결과: [sources.md](submission/results/cards/ai-news/sources.md) · [image-credits.md](submission/results/cards/ai-news/image-credits.md) · [verify.md](submission/results/cards/ai-news/verify.md) (통과 29 · 실패 0 · 확인 필요 4)
+
+### 국내 반도체 최신뉴스 (2026-10-26, 6장)
+<img src="submission/results/cards/semiconductor-news/card_01.png" width="180" alt="카드 1"> <img src="submission/results/cards/semiconductor-news/card_02.png" width="180" alt="카드 2"> <img src="submission/results/cards/semiconductor-news/card_03.png" width="180" alt="카드 3"> <img src="submission/results/cards/semiconductor-news/card_04.png" width="180" alt="카드 4"> <img src="submission/results/cards/semiconductor-news/card_05.png" width="180" alt="카드 5"> <img src="submission/results/cards/semiconductor-news/card_06.png" width="180" alt="카드 6">
+
+출처·이미지 기록·검사 결과: [sources.md](submission/results/cards/semiconductor-news/sources.md) · [image-credits.md](submission/results/cards/semiconductor-news/image-credits.md) · [verify.md](submission/results/cards/semiconductor-news/verify.md) (통과 20 · 실패 0 · 확인 필요 8)
+
+> 5·6장은 만들 때 agy 그림 할당량이 바닥나서, agy 대신 Claude CLI가 그린 평면 SVG 그림이에요(image-credits.md에 적혀 있어요). 1~4장이 agy 그림이에요.
+
 ## 앱 실행하기
 
-주제를 넣으면 조사 → 후보 선택 → 질문 답변 → 스토리보드 → 배경 그림까지 이어져요. 글자를 얹은 카드 완성과 내려받기는 아직 없어요(구현 5단계).
+주제를 넣으면 조사 → 후보 선택 → 질문 답변 → 스토리보드 → 배경 그림 → 글자 올리기 → 검수·부분 수정 → 최종 승인·내려받기(PNG·ZIP)까지 이어져요. 시작 화면에서 **최신 소식**과 **지원사업·공모전**(오늘부터 6개월 마감 공고, STEP 13 확장) 중 고를 수 있어요.
 
 처음에는 **모의 모드**로 켜 보는 걸 권해요. 실제 검색 없이 정해진 예시 데이터로 화면 흐름만 보여 줘서 사용량이 들지 않아요. 모의 데이터일 때는 화면 맨 위에 노란 띠 **"모의 데이터예요. 실제 검색 결과가 아니에요."**가 늘 보여요.
 
