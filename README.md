@@ -2,12 +2,14 @@
 
 ## 만든 카드 예시
 
-지원사업·공모전 마감 카드와 최신뉴스 카드를 실제 Claude CLI(조사·편집)와 agy(배경 그림)로 만들고, 최종 승인해 내보낸 결과예요. 카드 1장은 1080×1350 PNG이고, 글자는 그림에 그리지 않고 앱이 Pretendard로 따로 올렸어요. 카드를 누르면 원본 크기로 볼 수 있어요.
+실제 Claude CLI(조사·편집)와 agy(배경 그림)로 만들고, 최종 승인해 내보낸 카드예요. 맨 위는 STEP 13 확장인 **지원사업·공모전 마감 카드뉴스**이고, 그 아래는 최신 소식 카드뉴스예요. 카드 1장은 1080×1350 PNG이고, 글자는 그림에 그리지 않고 앱이 Pretendard로 따로 올렸어요. 카드를 누르면 원본 크기로 볼 수 있어요.
 
 ### 지원사업·공모전 (STEP 13 확장, 2026-10-26, 5장)
 <img src="submission/results/cards/support/card_01.png" width="180" alt="카드 1"> <img src="submission/results/cards/support/card_02.png" width="180" alt="카드 2"> <img src="submission/results/cards/support/card_03.png" width="180" alt="카드 3"> <img src="submission/results/cards/support/card_04.png" width="180" alt="카드 4"> <img src="submission/results/cards/support/card_05.png" width="180" alt="카드 5">
 
-출처·이미지 기록·검사 결과: [sources.md](submission/results/cards/support/sources.md) · [image-credits.md](submission/results/cards/support/image-credits.md) · [verify.md](submission/results/cards/support/verify.md) (통과 24 · 실패 0 · 확인 필요 3)
+출처·이미지 기록·검사 결과: [sources.md](submission/results/cards/support/sources.md) · [image-credits.md](submission/results/cards/support/image-credits.md) · [verify.md](submission/results/cards/support/verify.md) (통과 24 · 실패 0 · 확인 필요 4)
+
+공고 카드의 대상·마감·신청 세 줄과 요약 카드는 공식 공고문 확인 결과로 앱이 채웠고, D-day는 글자를 올린 날(10/26) 기준으로 앱이 계산했어요.
 
 ### AI 최신뉴스 (2026-10-26, 7장)
 <img src="submission/results/cards/ai-news/card_01.png" width="180" alt="카드 1"> <img src="submission/results/cards/ai-news/card_02.png" width="180" alt="카드 2"> <img src="submission/results/cards/ai-news/card_03.png" width="180" alt="카드 3"> <img src="submission/results/cards/ai-news/card_04.png" width="180" alt="카드 4"> <img src="submission/results/cards/ai-news/card_05.png" width="180" alt="카드 5"> <img src="submission/results/cards/ai-news/card_06.png" width="180" alt="카드 6"> <img src="submission/results/cards/ai-news/card_07.png" width="180" alt="카드 7">
