@@ -2,7 +2,12 @@
 
 ## 만든 카드 예시
 
-실제 Claude CLI(조사·편집)와 agy(배경 그림)로 만들고, 최종 승인해 내보낸 카드예요. 카드 1장은 1080×1350 PNG이고, 글자는 그림에 그리지 않고 앱이 Pretendard로 따로 올렸어요. 카드를 누르면 원본 크기로 볼 수 있어요.
+지원사업·공모전 마감 카드와 최신뉴스 카드를 실제 Claude CLI(조사·편집)와 agy(배경 그림)로 만들고, 최종 승인해 내보낸 결과예요. 카드 1장은 1080×1350 PNG이고, 글자는 그림에 그리지 않고 앱이 Pretendard로 따로 올렸어요. 카드를 누르면 원본 크기로 볼 수 있어요.
+
+### 지원사업·공모전 (STEP 13 확장, 2026-10-26, 5장)
+<img src="submission/results/cards/support/card_01.png" width="180" alt="카드 1"> <img src="submission/results/cards/support/card_02.png" width="180" alt="카드 2"> <img src="submission/results/cards/support/card_03.png" width="180" alt="카드 3"> <img src="submission/results/cards/support/card_04.png" width="180" alt="카드 4"> <img src="submission/results/cards/support/card_05.png" width="180" alt="카드 5">
+
+출처·이미지 기록·검사 결과: [sources.md](submission/results/cards/support/sources.md) · [image-credits.md](submission/results/cards/support/image-credits.md) · [verify.md](submission/results/cards/support/verify.md) (통과 24 · 실패 0 · 확인 필요 3)
 
 ### AI 최신뉴스 (2026-10-26, 7장)
 <img src="submission/results/cards/ai-news/card_01.png" width="180" alt="카드 1"> <img src="submission/results/cards/ai-news/card_02.png" width="180" alt="카드 2"> <img src="submission/results/cards/ai-news/card_03.png" width="180" alt="카드 3"> <img src="submission/results/cards/ai-news/card_04.png" width="180" alt="카드 4"> <img src="submission/results/cards/ai-news/card_05.png" width="180" alt="카드 5"> <img src="submission/results/cards/ai-news/card_06.png" width="180" alt="카드 6"> <img src="submission/results/cards/ai-news/card_07.png" width="180" alt="카드 7">
@@ -13,8 +18,6 @@
 <img src="submission/results/cards/semiconductor-news/card_01.png" width="180" alt="카드 1"> <img src="submission/results/cards/semiconductor-news/card_02.png" width="180" alt="카드 2"> <img src="submission/results/cards/semiconductor-news/card_03.png" width="180" alt="카드 3"> <img src="submission/results/cards/semiconductor-news/card_04.png" width="180" alt="카드 4"> <img src="submission/results/cards/semiconductor-news/card_05.png" width="180" alt="카드 5"> <img src="submission/results/cards/semiconductor-news/card_06.png" width="180" alt="카드 6">
 
 출처·이미지 기록·검사 결과: [sources.md](submission/results/cards/semiconductor-news/sources.md) · [image-credits.md](submission/results/cards/semiconductor-news/image-credits.md) · [verify.md](submission/results/cards/semiconductor-news/verify.md) (통과 20 · 실패 0 · 확인 필요 8)
-
-> 5·6장은 만들 때 agy 그림 할당량이 바닥나서, agy 대신 Claude CLI가 그린 평면 SVG 그림이에요(image-credits.md에 적혀 있어요). 1~4장이 agy 그림이에요.
 
 ## 앱 실행하기
 
